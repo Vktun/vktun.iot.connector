@@ -2,7 +2,7 @@ name: Sync to Gitee
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  GITEE_REPO: ${{ "vktun/vktun.iot.connector" || github.repository }}
+  GITEE_REPO: ${{ "vktun.iot.connector" || github.repository }}
 
 on:
   push:
