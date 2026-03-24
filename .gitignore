@@ -285,3 +285,6 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 .idea/
+
+# 文档资料
+AI资料/*

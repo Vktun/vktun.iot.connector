@@ -83,6 +83,7 @@ class Program
         await DemoUdpCommunication();
         await DemoSerialCommunication();
         await DemoProtocolParsing();
+        await DemoProtocolTemplateLoading();
 
         _logger.Info("演示完成，运行5秒后自动停止...");
         await Task.Delay(5000);
@@ -322,6 +323,80 @@ class Program
         }
 
         await Task.CompletedTask;
+    }
+
+    static async Task DemoProtocolTemplateLoading()
+    {
+        _logger.Info("\n--- 协议模板加载演示 ---");
+
+        var configProvider = new JsonConfigurationProvider(_logger);
+
+        var templatesPath = Path.Combine(AppContext.BaseDirectory, "Protocols");
+        Directory.CreateDirectory(templatesPath);
+
+        var sampleTemplate = new ProtocolConfig
+        {
+            ProtocolId = "DemoProtocol_001",
+            ProtocolName = "演示协议模板",
+            Description = "这是一个用于演示的协议模板",
+            ProtocolType = ProtocolType.Custom,
+            ChannelId = "Channel_001",
+            ParseRules = new Dictionary<string, string>
+            {
+                { "FrameHeader", "0xAA,0x55" },
+                { "FrameLength", "2,2" },
+                { "CheckType", "Crc16Modbus" }
+            },
+            Points = new List<PointConfig>
+            {
+                new PointConfig
+                {
+                    PointName = "温度",
+                    Offset = 4,
+                    Length = 2,
+                    DataType = DataType.UInt16,
+                    Ratio = 0.1,
+                    Unit = "℃",
+                    Description = "环境温度"
+                },
+                new PointConfig
+                {
+                    PointName = "湿度",
+                    Offset = 6,
+                    Length = 2,
+                    DataType = DataType.UInt16,
+                    Ratio = 0.1,
+                    Unit = "%RH",
+                    Description = "环境湿度"
+                }
+            }
+        };
+
+        var templatePath = Path.Combine(templatesPath, "DemoProtocol.json");
+        await configProvider.SaveProtocolTemplateAsync(templatePath, sampleTemplate);
+        _logger.Info($"协议模板已保存到: {templatePath}");
+
+        var loadedTemplate = await configProvider.LoadProtocolTemplateAsync(templatePath);
+        if (loadedTemplate != null)
+        {
+            _logger.Info($"加载协议模板成功: {loadedTemplate.ProtocolName}");
+            _logger.Info($"协议ID: {loadedTemplate.ProtocolId}");
+            _logger.Info($"协议类型: {loadedTemplate.ProtocolType}");
+            _logger.Info($"解析点数量: {loadedTemplate.Points.Count}");
+            foreach (var point in loadedTemplate.Points)
+            {
+                _logger.Info($"  - {point.PointName}: {point.DataType}, 偏移={point.Offset}, 长度={point.Length}");
+            }
+        }
+
+        var allTemplates = await configProvider.LoadProtocolTemplatesAsync(templatesPath);
+        _logger.Info($"目录中共加载了 {allTemplates.Count} 个协议模板");
+
+        var allPaths = await configProvider.GetProtocolTemplatePathsAsync(templatesPath);
+        foreach (var path in allPaths)
+        {
+            _logger.Info($"  - {Path.GetFileName(path)}");
+        }
     }
 
     static void OnDeviceStatusChanged(object? sender, DeviceStatusChangedEventArgs e)

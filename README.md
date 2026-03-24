@@ -1,146 +1,148 @@
 # Vktun.IoT.Connector
 
-工业设备数据采集 SDK，支持多种通信方式和协议解析，具备高并发、高可用、可扩展、跨平台的特性。
+Industrial device data acquisition SDK, supporting multiple communication methods and protocol parsing, with high concurrency, high availability, scalability, and cross-platform features.
 
-## 项目结构
+**Language**: [English](README.md) | [中文](README.zh.md)
+
+## Project Structure
 
 ```
 Vktun.IoT.Connector/
-├── src/                                    # 源代码目录
-│   ├── Vktun.IoT.Connector.Api/           # 应用接口层 - SDK入口API
-│   │   ├── IIoTDataCollector.cs           # 数据采集器接口
-│   │   └── IoTDataCollector.cs            # 数据采集器实现
+├── src/                                    # Source Code Directory
+│   ├── Vktun.IoT.Connector.Api/           # Application Interface Layer - SDK Entry API
+│   │   ├── IIoTDataCollector.cs           # Data Collector Interface
+│   │   └── IoTDataCollector.cs            # Data Collector Implementation
 │   │
-│   ├── Vktun.IoT.Connector.Business/      # 业务逻辑层 - 核心业务处理
+│   ├── Vktun.IoT.Connector.Business/      # Business Logic Layer - Core Business Processing
 │   │   ├── Managers/
-│   │   │   ├── DeviceManager.cs           # 设备管理器
-│   │   │   ├── SessionManager.cs          # 会话管理器
-│   │   │   └── HeartbeatManager.cs        # 心跳管理器
+│   │   │   ├── DeviceManager.cs           # Device Manager
+│   │   │   ├── SessionManager.cs          # Session Manager
+│   │   │   └── HeartbeatManager.cs        # Heartbeat Manager
 │   │   └── Providers/
-│   │       └── DataProvider.cs            # 数据提供者
+│   │       └── DataProvider.cs            # Data Provider
 │   │
-│   ├── Vktun.IoT.Connector.Concurrency/   # 并发调度层 - 任务调度与资源监控
+│   ├── Vktun.IoT.Connector.Concurrency/   # Concurrency Scheduling Layer
 │   │   ├── Schedulers/
-│   │   │   └── TaskScheduler.cs           # 任务调度器
+│   │   │   └── TaskScheduler.cs           # Task Scheduler
 │   │   ├── Queues/
-│   │   │   └── AsyncQueue.cs              # 异步队列
+│   │   │   └── AsyncQueue.cs              # Async Queue
 │   │   └── Monitors/
-│   │       └── ResourceMonitor.cs         # 资源监控器
+│   │       └── ResourceMonitor.cs         # Resource Monitor
 │   │
-│   ├── Vktun.IoT.Connector.Communication/ # 通信适配层 - 通信通道实现
+│   ├── Vktun.IoT.Connector.Communication/ # Communication Adapter Layer
 │   │   └── Channels/
-│   │       ├── CommunicationChannelBase.cs# 通信通道基类
-│   │       ├── TcpServerChannel.cs        # TCP服务端通道
-│   │       └── UdpChannel.cs              # UDP通道
+│   │       ├── CommunicationChannelBase.cs# Communication Channel Base
+│   │       ├── TcpServerChannel.cs        # TCP Server Channel
+│   │       └── UdpChannel.cs              # UDP Channel
 │   │
-│   ├── Vktun.IoT.Connector.Serial/        # 串口通信模块 - 独立串口采集包
+│   ├── Vktun.IoT.Connector.Serial/        # Serial Communication Module - Independent Package
 │   │   ├── Channels/
-│   │   │   ├── SerialChannelBase.cs       # 串口通道基类
-│   │   │   └── SerialChannel.cs           # 串口通道实现
+│   │   │   ├── SerialChannelBase.cs       # Serial Channel Base
+│   │   │   └── SerialChannel.cs           # Serial Channel Implementation
 │   │   └── Drivers/
-│   │       └── SerialPortDriver.cs        # 串口驱动(Windows API封装)
+│   │       └── SerialPortDriver.cs        # Serial Port Driver (Windows API Wrapper)
 │   │
-│   ├── Vktun.IoT.Connector.Driver/        # 底层驱动层 - 硬件驱动封装
+│   ├── Vktun.IoT.Connector.Driver/        # Hardware Driver Layer
 │   │   └── Sockets/
-│   │       └── SocketDriver.cs            # Socket驱动
+│   │       └── SocketDriver.cs            # Socket Driver
 │   │
-│   ├── Vktun.IoT.Connector.Protocol/      # 协议解析层 - 协议解析器
+│   ├── Vktun.IoT.Connector.Protocol/      # Protocol Parsing Layer
 │   │   ├── Parsers/
-│   │   │   ├── CustomProtocolParser.cs    # 自定义协议解析器
-│   │   │   ├── ModbusRtuParser.cs         # Modbus RTU解析器
-│   │   │   └── ModbusTcpParser.cs         # Modbus TCP解析器
+│   │   │   ├── CustomProtocolParser.cs    # Custom Protocol Parser
+│   │   │   ├── ModbusRtuParser.cs         # Modbus RTU Parser
+│   │   │   └── ModbusTcpParser.cs         # Modbus TCP Parser
 │   │   ├── Factories/
-│   │   │   └── ProtocolParserFactory.cs   # 协议解析器工厂
-│   │   └── Templates/                     # JSON配置模板
-│   │       ├── ModbusRtuTemplate.json     # Modbus RTU配置模板
-│   │       └── ModbusTcpTemplate.json     # Modbus TCP配置模板
+│   │   │   └── ProtocolParserFactory.cs   # Protocol Parser Factory
+│   │   └── Templates/                     # JSON Configuration Templates
+│   │       ├── ModbusRtuTemplate.json     # Modbus RTU Template
+│   │       └── ModbusTcpTemplate.json     # Modbus TCP Template
 │   │
-│   ├── Vktun.IoT.Connector.Configuration/ # 配置管理层 - 配置与日志
+│   ├── Vktun.IoT.Connector.Configuration/ # Configuration Management Layer
 │   │   ├── Providers/
-│   │   │   └── JsonConfigurationProvider.cs# JSON配置提供者
+│   │   │   └── JsonConfigurationProvider.cs# JSON Configuration Provider
 │   │   └── Logging/
-│   │       └── Logger.cs                  # 日志接口
+│   │       └── Logger.cs                  # Logger Interface
 │   │
-│   └── Vktun.IoT.Connector.Core/          # 核心层 - 接口与模型定义
-│       ├── Interfaces/                    # 核心接口
-│       │   ├── IDeviceManager.cs          # 设备管理接口
-│       │   ├── ISessionManager.cs         # 会话管理接口
-│       │   ├── ICommunicationChannel.cs   # 通信通道接口
-│       │   ├── IProtocolParser.cs         # 协议解析接口
-│       │   ├── IDataProvider.cs           # 数据提供接口
-│       │   └── ITaskScheduler.cs          # 任务调度接口
-│       ├── Models/                        # 数据模型
-│       │   ├── ConfigModels.cs            # 配置模型
-│       │   ├── DeviceModels.cs            # 设备模型
-│       │   ├── ProtocolModels.cs          # 协议模型
-│       │   └── ModbusModels.cs            # Modbus模型
+│   └── Vktun.IoT.Connector.Core/          # Core Layer - Interfaces & Models
+│       ├── Interfaces/                    # Core Interfaces
+│       │   ├── IDeviceManager.cs          # Device Management Interface
+│       │   ├── ISessionManager.cs         # Session Management Interface
+│       │   ├── ICommunicationChannel.cs   # Communication Channel Interface
+│       │   ├── IProtocolParser.cs         # Protocol Parser Interface
+│       │   ├── IDataProvider.cs           # Data Provider Interface
+│       │   └── ITaskScheduler.cs          # Task Scheduler Interface
+│       ├── Models/                        # Data Models
+│       │   ├── ConfigModels.cs            # Configuration Models
+│       │   ├── DeviceModels.cs            # Device Models
+│       │   ├── ProtocolModels.cs          # Protocol Models
+│       │   └── ModbusModels.cs            # Modbus Models
 │       ├── Enums/
-│       │   └── Enums.cs                   # 枚举定义
+│       │   └── Enums.cs                   # Enumerations
 │       └── Utils/
-│           └── CrcCalculator.cs           # CRC校验工具
+│           └── CrcCalculator.cs           # CRC Check Utilities
 │
-└── demo/                                  # 示例程序
+└── demo/                                  # Demo Application
     └── Vktun.IoT.Connector.Demo/
-        └── Program.cs                     # 上位机采集演示程序
+        └── Program.cs                     # Data Acquisition Demo
 ```
 
-## 架构设计
+## Architecture Design
 
-### 五层架构
+### Five-Layer Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    应用接口层 (Api)                          │
+│                Application Interface Layer (Api)            │
 │              IIoTDataCollector / IoTDataCollector           │
 ├─────────────────────────────────────────────────────────────┤
-│                    业务逻辑层 (Business)                     │
+│                Business Logic Layer (Business)              │
 │     DeviceManager / SessionManager / HeartbeatManager       │
 ├─────────────────────────────────────────────────────────────┤
-│                   并发调度层 (Concurrency)                   │
+│               Concurrency Scheduling Layer (Concurrency)    │
 │          TaskScheduler / ResourceMonitor / AsyncQueue       │
 ├─────────────────────────────────────────────────────────────┤
-│                  通信适配层 (Communication)                  │
+│              Communication Adapter Layer (Communication)    │
 │         TcpServerChannel / UdpChannel / SerialChannel       │
 ├─────────────────────────────────────────────────────────────┤
-│                    底层驱动层 (Driver)                       │
+│                Hardware Driver Layer (Driver)               │
 │              SocketDriver / SerialPortDriver                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 协议解析
+## Protocol Parsing
 
-### 支持的协议
+### Supported Protocols
 
-| 协议类型 | 解析器 | 说明 |
-|---------|--------|------|
-| Modbus RTU | `ModbusRtuParser` | 串口Modbus协议，CRC16校验 |
-| Modbus TCP | `ModbusTcpParser` | TCP Modbus协议，MBAP头 |
-| 自定义协议 | `CustomProtocolParser` | JSON配置的灵活协议解析 |
+| Protocol Type | Parser | Description |
+|---------|--------|-------------|
+| Modbus RTU | `ModbusRtuParser` | Serial Modbus protocol with CRC16 check |
+| Modbus TCP | `ModbusTcpParser` | TCP Modbus protocol with MBAP header |
+| Custom Protocol | `CustomProtocolParser` | Flexible protocol parsing via JSON config |
 
-### Modbus 协议解析
+### Modbus Protocol Parsing
 
-#### 寄存器类型
+#### Register Types
 
-| 类型 | 枚举值 | 功能码 | 访问权限 |
-|------|--------|--------|----------|
-| 线圈 (Coil) | `Coil` | 01/05/0F | 读写 |
-| 离散输入 (Discrete Input) | `DiscreteInput` | 02 | 只读 |
-| 输入寄存器 (Input Register) | `InputRegister` | 04 | 只读 |
-| 保持寄存器 (Holding Register) | `HoldingRegister` | 03/06/10 | 读写 |
+| Type | Enum Value | Function Codes | Access Permission |
+|------|------------|----------------|-------------------|
+| Coil | `Coil` | 01/05/0F | Read/Write |
+| Discrete Input | `DiscreteInput` | 02 | Read Only |
+| Input Register | `InputRegister` | 04 | Read Only |
+| Holding Register | `HoldingRegister` | 03/06/10 | Read/Write |
 
-#### JSON 配置示例
+#### JSON Configuration Example
 
 ```json
 {
   "ProtocolId": "ModbusRtu_001",
-  "ProtocolName": "温湿度采集",
+  "ProtocolName": "Temperature & Humidity",
   "ModbusType": "Rtu",
   "SlaveId": 1,
   "ByteOrder": "BigEndian",
   "WordOrder": "HighWordFirst",
   "Points": [
     {
-      "PointName": "温度",
+      "PointName": "Temperature",
       "RegisterType": "InputRegister",
       "Address": 0,
       "Quantity": 1,
@@ -149,7 +151,7 @@ Vktun.IoT.Connector/
       "Unit": "℃"
     },
     {
-      "PointName": "湿度",
+      "PointName": "Humidity",
       "RegisterType": "InputRegister",
       "Address": 1,
       "DataType": "UInt16",
@@ -157,7 +159,7 @@ Vktun.IoT.Connector/
       "Unit": "%RH"
     },
     {
-      "PointName": "运行状态",
+      "PointName": "RunningStatus",
       "RegisterType": "Coil",
       "Address": 0,
       "DataType": "UInt8"
@@ -166,20 +168,20 @@ Vktun.IoT.Connector/
 }
 ```
 
-#### 数据类型支持
+#### Supported Data Types
 
-| 数据类型 | 字节数 | 说明 |
-|---------|--------|------|
-| UInt8 / Int8 | 1 | 8位整数 |
-| UInt16 / Int16 | 2 | 16位整数 |
-| UInt32 / Int32 | 4 | 32位整数 |
-| UInt64 / Int64 | 8 | 64位整数 |
-| Float | 4 | 单精度浮点 |
-| Double | 8 | 双精度浮点 |
+| Data Type | Byte Count | Description |
+|---------|------------|-------------|
+| UInt8 / Int8 | 1 | 8-bit integer |
+| UInt16 / Int16 | 2 | 16-bit integer |
+| UInt32 / Int32 | 4 | 32-bit integer |
+| UInt64 / Int64 | 8 | 64-bit integer |
+| Float | 4 | Single-precision float |
+| Double | 8 | Double-precision float |
 
-### 自定义协议解析
+### Custom Protocol Parsing
 
-通过JSON配置实现灵活的二进制协议解析：
+Flexible binary protocol parsing via JSON configuration:
 
 ```json
 {
@@ -197,7 +199,7 @@ Vktun.IoT.Connector/
   },
   "Points": [
     {
-      "PointName": "温度",
+      "PointName": "Temperature",
       "Offset": 4,
       "Length": 2,
       "DataType": "UInt16",
@@ -208,21 +210,21 @@ Vktun.IoT.Connector/
 }
 ```
 
-## CRC 校验工具
+## CRC Check Utilities
 
-`CrcCalculator` 提供多种校验算法：
+`CrcCalculator` provides multiple check algorithms:
 
-| 算法 | 方法 | 用途 |
-|------|------|------|
+| Algorithm | Method | Usage |
+|-----------|--------|-------|
 | CRC16 Modbus | `Crc16Modbus()` | Modbus RTU |
-| CRC16 CCITT | `Crc16Ccitt()` | 通信协议 |
-| CRC32 | `Crc32()` | 以太网/ZIP |
-| CRC8 | `Crc8()` | 8位校验 |
+| CRC16 CCITT | `Crc16Ccitt()` | Communication protocols |
+| CRC32 | `Crc32()` | Ethernet / ZIP |
+| CRC8 | `Crc8()` | 8-bit check |
 | LRC | `Lrc()` | Modbus ASCII |
-| XOR | `XorCheck()` | 异或校验 |
-| Sum | `SumCheck()` | 累加和 |
+| XOR | `XorCheck()` | XOR check |
+| Sum | `SumCheck()` | Sum check |
 
-### 使用示例
+### Usage Example
 
 ```csharp
 using Vktun.IoT.Connector.Core.Utils;
@@ -232,22 +234,22 @@ ushort crc = CrcCalculator.Crc16Modbus(data);
 byte crcLow = (byte)(crc & 0xFF);
 byte crcHigh = (byte)(crc >> 8);
 
-// 验证
+// Verify
 bool valid = CrcCalculator.VerifyCrc16Modbus(receivedData, expectedCrc);
 
 // LRC
 byte lrc = CrcCalculator.Lrc(data);
 ```
 
-## 快速开始
+## Quick Start
 
-### 安装
+### Installation
 
 ```bash
 dotnet add package Vktun.IoT.Connector.Api
 ```
 
-### 基本使用
+### Basic Usage
 
 ```csharp
 using Vktun.IoT.Connector.Api;
@@ -255,7 +257,7 @@ using Vktun.IoT.Connector.Business.Managers;
 using Vktun.IoT.Connector.Configuration.Providers;
 using Vktun.IoT.Connector.Core.Models;
 
-// 初始化
+// Initialize
 var logger = new ConsoleLogger();
 var configProvider = new JsonConfigurationProvider(logger);
 var deviceManager = new DeviceManager(sessionManager, configProvider, logger);
@@ -270,11 +272,11 @@ var collector = new IoTDataCollector(
     heartbeatManager,
     logger);
 
-// 配置设备
+// Configure device
 var device = new DeviceInfo
 {
     DeviceId = "DEVICE_001",
-    DeviceName = "温湿度传感器",
+    DeviceName = "Temperature & Humidity Sensor",
     CommunicationType = CommunicationType.Serial,
     SerialPort = "COM3",
     BaudRate = 9600,
@@ -284,11 +286,11 @@ var device = new DeviceInfo
 await collector.AddDeviceAsync(device);
 await collector.ConnectDeviceAsync(device.DeviceId);
 
-// 采集数据
+// Collect data
 var data = await collector.CollectDataAsync(device.DeviceId);
 ```
 
-## 项目依赖关系
+## Project Dependencies
 
 ```
 Vktun.IoT.Connector.Api
@@ -307,19 +309,19 @@ Vktun.IoT.Connector.Api
     └── Vktun.IoT.Connector.Configuration
         └── Vktun.IoT.Connector.Core
 
-Vktun.IoT.Connector.Serial (独立包)
+Vktun.IoT.Connector.Serial (Independent Package)
     └── Vktun.IoT.Connector.Core
 ```
 
-## 技术特性
+## Technical Features
 
-- **.NET 10.0**: 最新框架支持
-- **异步编程**: async/await + IOCP 模型
-- **依赖注入**: 接口解耦，易于测试
-- **插件化设计**: 协议解析器可扩展
-- **高并发**: 连接池、线程池、任务队列
-- **跨平台**: Windows/Linux/macOS
+- **.NET 10.0**: Latest framework support
+- **Async Programming**: async/await + IOCP model
+- **Dependency Injection**: Interface decoupling, testable
+- **Plugin Design**: Extensible protocol parsers
+- **High Concurrency**: Connection pool, thread pool, task queue
+- **Cross-platform**: Windows/Linux/macOS
 
-## 许可证
+## License
 
 MIT License

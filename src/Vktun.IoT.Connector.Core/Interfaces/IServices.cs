@@ -20,6 +20,12 @@ public interface IConfigurationProvider
     Task SaveConfigAsync(string filePath, SdkConfig config);
     Task<bool> UpdateConfigAsync(Action<SdkConfig> updateAction);
     event EventHandler<ConfigChangedEventArgs>? ConfigChanged;
+
+    // Protocol template methods
+    Task<List<ProtocolConfig>> LoadProtocolTemplatesAsync(string templatesDirectory);
+    Task<ProtocolConfig?> LoadProtocolTemplateAsync(string filePath);
+    Task<List<string>> GetProtocolTemplatePathsAsync(string templatesDirectory);
+    Task SaveProtocolTemplateAsync(string filePath, ProtocolConfig config);
 }
 
 public class ConfigChangedEventArgs : EventArgs
