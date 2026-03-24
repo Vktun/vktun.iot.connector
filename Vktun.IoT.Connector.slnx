@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Vktun.IoT.Connector.Api/Vktun.IoT.Connector.Api.csproj" />
+    <Project Path="src/Vktun.IoT.Connector.Business/Vktun.IoT.Connector.Business.csproj" />
+    <Project Path="src/Vktun.IoT.Connector.Communication/Vktun.IoT.Connector.Communication.csproj" />
+    <Project Path="src/Vktun.IoT.Connector.Concurrency/Vktun.IoT.Connector.Concurrency.csproj" />
+    <Project Path="src/Vktun.IoT.Connector.Configuration/Vktun.IoT.Connector.Configuration.csproj" />
+    <Project Path="src/Vktun.IoT.Connector.Core/Vktun.IoT.Connector.Core.csproj" />
+    <Project Path="src/Vktun.IoT.Connector.Driver/Vktun.IoT.Connector.Driver.csproj" />
+    <Project Path="src/Vktun.IoT.Connector.Protocol/Vktun.IoT.Connector.Protocol.csproj" />
+    <Project Path="src/Vktun.IoT.Connector.Serial/Vktun.IoT.Connector.Serial.csproj" />
+  </Folder>
+  <Folder Name="/demo/">
+    <Project Path="demo/Vktun.IoT.Connector.Demo/Vktun.IoT.Connector.Demo.csproj" />
+  </Folder>
+</Solution>

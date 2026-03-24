@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />
+    <ProjectReference Include="..\Vktun.IoT.Connector.Concurrency\Vktun.IoT.Connector.Concurrency.csproj" />
+    <ProjectReference Include="..\Vktun.IoT.Connector.Communication\Vktun.IoT.Connector.Communication.csproj" />
+    <ProjectReference Include="..\Vktun.IoT.Connector.Protocol\Vktun.IoT.Connector.Protocol.csproj" />
+    <ProjectReference Include="..\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />
+  </ItemGroup>
+
+</Project>
