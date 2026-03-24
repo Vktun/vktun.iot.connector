@@ -2,6 +2,7 @@ name: Sync to Gitee
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  GITEE_REPO: ${{ "vktun/vktun.iot.connector" || github.repository }}
 
 on:
   push:
@@ -17,18 +18,10 @@ jobs:
       with:
         fetch-depth: 0
     
-    - name: Mirror to Gitee
+    - name: Mirror to Gitee via SSH
       uses: wearerequired/git-mirror-action@v1.2.0
       env:
-        SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
+        SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVIATE_KEY }}
       with:
         source-repo: "https://github.com/${{ github.repository }}.git"
-        destination-repo: "git@gitee.com:${{ github.repository }}.git"
-    
-    - name: Sync via HTTPS (Alternative)
-      if: failure()
-      run: |
-        git config --global user.name "GitHub Actions"
-        git config --global user.email "actions@github.com"
-        git push --mirror https://${{ secrets.GITEE_USERNAME }}:${{ secrets.GITEE_PASSWORD }}@gitee.com/${{ github.repository }}.git
-      continue-on-error: true
+        destination-repo: "git@gitee.com:${{ env.GITEE_REPO }}.git"
