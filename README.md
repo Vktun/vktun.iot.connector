@@ -9,7 +9,7 @@ Industrial device data acquisition SDK, supporting multiple communication method
 ```
 Vktun.IoT.Connector/
 ├── src/                                    # Source Code Directory
-│   ├── Vktun.IoT.Connector.Api/           # Application Interface Layer - SDK Entry API
+│   ├── Vktun.IoT.Connector/               # Application Interface Layer - SDK Entry API
 │   │   ├── IIoTDataCollector.cs           # Data Collector Interface
 │   │   └── IoTDataCollector.cs            # Data Collector Implementation
 │   │
@@ -246,13 +246,13 @@ byte lrc = CrcCalculator.Lrc(data);
 ### Installation
 
 ```bash
-dotnet add package Vktun.IoT.Connector.Api
+dotnet add package Vktun.IoT.Connector
 ```
 
 ### Basic Usage
 
 ```csharp
-using Vktun.IoT.Connector.Api;
+using Vktun.IoT.Connector;
 using Vktun.IoT.Connector.Business.Managers;
 using Vktun.IoT.Connector.Configuration.Providers;
 using Vktun.IoT.Connector.Core.Models;
@@ -293,7 +293,7 @@ var data = await collector.CollectDataAsync(device.DeviceId);
 ## Project Dependencies
 
 ```
-Vktun.IoT.Connector.Api
+Vktun.IoT.Connector
     ├── Vktun.IoT.Connector.Business
     │   ├── Vktun.IoT.Connector.Core
     │   ├── Vktun.IoT.Connector.Concurrency

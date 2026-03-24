@@ -71,7 +71,9 @@ public enum ProtocolType
     ModbusTcp,
     Custom,
     Mqtt,
-    Http
+    Http,
+    S7,
+    IEC104
 }
 
 public enum TaskPriority

@@ -9,7 +9,7 @@
 ```
 Vktun.IoT.Connector/
 ├── src/                                    # 源代码目录
-│   ├── Vktun.IoT.Connector.Api/           # 应用接口层 - SDK入口API
+│   ├── Vktun.IoT.Connector/               # 应用接口层 - SDK入口API
 │   │   ├── IIoTDataCollector.cs           # 数据采集器接口
 │   │   └── IoTDataCollector.cs            # 数据采集器实现
 │   │
@@ -246,13 +246,13 @@ byte lrc = CrcCalculator.Lrc(data);
 ### 安装
 
 ```bash
-dotnet add package Vktun.IoT.Connector.Api
+dotnet add package Vktun.IoT.Connector
 ```
 
 ### 基本使用
 
 ```csharp
-using Vktun.IoT.Connector.Api;
+using Vktun.IoT.Connector;
 using Vktun.IoT.Connector.Business.Managers;
 using Vktun.IoT.Connector.Configuration.Providers;
 using Vktun.IoT.Connector.Core.Models;
@@ -293,7 +293,7 @@ var data = await collector.CollectDataAsync(device.DeviceId);
 ## 项目依赖关系
 
 ```
-Vktun.IoT.Connector.Api
+Vktun.IoT.Connector
     ├── Vktun.IoT.Connector.Business
     │   ├── Vktun.IoT.Connector.Core
     │   ├── Vktun.IoT.Connector.Concurrency

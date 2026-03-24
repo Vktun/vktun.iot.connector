@@ -26,6 +26,8 @@ public class ProtocolParserFactory : IProtocolParserFactory
         RegisterParser(new CustomProtocolParser(_logger));
         RegisterParser(new ModbusRtuParser(_logger));
         RegisterParser(new ModbusTcpParser(_logger));
+        RegisterParser(new S7ProtocolParser(_logger));
+        RegisterParser(new IEC104ProtocolParser(_logger));
     }
 
     public IProtocolParser? GetParser(ProtocolType type)

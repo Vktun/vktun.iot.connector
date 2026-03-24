@@ -44,7 +44,7 @@ public class JsonConfigurationProvider : IConfigurationProvider
         {
             if (!File.Exists(filePath))
             {
-                _logger.Warning($"配置文件不存�? {filePath}, 使用默认配置");
+                _logger.Warning($"配置文件不存在: {filePath}, 使用默认配置");
                 return _config;
             }
 

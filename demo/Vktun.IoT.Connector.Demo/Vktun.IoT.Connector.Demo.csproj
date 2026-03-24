@@ -8,11 +8,21 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Api\Vktun.IoT.Connector.Api.csproj" />
+    <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Api\Vktun.IoT.Connector.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Business\Vktun.IoT.Connector.Business.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Communication\Vktun.IoT.Connector.Communication.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Protocol\Vktun.IoT.Connector.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.Ports" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Protocols\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

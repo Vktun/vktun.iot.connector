@@ -2,7 +2,7 @@ using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
 
-namespace Vktun.IoT.Connector.Api;
+namespace Vktun.IoT.Connector;
 
 public interface IIoTDataCollector : IAsyncDisposable
 {

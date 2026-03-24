@@ -1,4 +1,4 @@
-using Vktun.IoT.Connector.Api;
+using Vktun.IoT.Connector;
 using Vktun.IoT.Connector.Business.Managers;
 using Vktun.IoT.Connector.Business.Providers;
 using Vktun.IoT.Connector.Configuration.Logging;
@@ -25,9 +25,30 @@ class Program
         Console.WriteLine("========================================");
         Console.WriteLine();
 
+        // 检查是否直接运行串口测试
+        if (args.Length > 0 && args[0].Equals("serialtest", StringComparison.OrdinalIgnoreCase))
+        {
+            await SerialPortTest.RunAsync(args.Skip(1).ToArray());
+            return;
+        }
+
+        // 检查是否直接运行 Modbus TCP 测试
+        if (args.Length > 0 && args[0].Equals("tcptest", StringComparison.OrdinalIgnoreCase))
+        {
+            await ModbusTcpTest.RunAsync(args.Skip(1).ToArray());
+            return;
+        }
+
+        // 检查是否直接运行 S7-1200 PLC 测试
+        if (args.Length > 0 && args[0].Equals("s7test", StringComparison.OrdinalIgnoreCase))
+        {
+            await SeminsS71200Test.RunAsync(args.Skip(1).ToArray());
+            return;
+        }
+
         try
         {
-            await RunDemoAsync();
+            await ShowMainMenuAsync();
         }
         catch (Exception ex)
         {
@@ -44,6 +65,45 @@ class Program
 
         Console.WriteLine("\n按任意键退出...");
         Console.ReadKey();
+    }
+
+    static async Task ShowMainMenuAsync()
+    {
+        while (true)
+        {
+            Console.WriteLine("\n请选择演示模式:");
+            Console.WriteLine("1. 完整功能演示");
+            Console.WriteLine("2. 串口温湿度传感器测试");
+            Console.WriteLine("3. Modbus TCP PLC 测试");
+            Console.WriteLine("4. 西门子 S7-1200 PLC 测试");
+            Console.WriteLine("0. 退出程序");
+            Console.Write("请输入选项: ");
+
+            var input = Console.ReadLine()?.Trim();
+            Console.WriteLine();
+
+            switch (input)
+            {
+                case "1":
+                    await RunDemoAsync();
+                    return;
+                case "2":
+                    await SerialPortTest.RunAsync(Array.Empty<string>());
+                    return;
+                case "3":
+                    await ModbusTcpTest.RunAsync(Array.Empty<string>());
+                    return;
+                case "4":
+                    await SeminsS71200Test.RunAsync(Array.Empty<string>());
+                    return;
+                case "0":
+                    _logger.Info("退出程序");
+                    return;
+                default:
+                    _logger.Warning("无效选项，请重新输入");
+                    break;
+            }
+        }
     }
 
     static async Task RunDemoAsync()
