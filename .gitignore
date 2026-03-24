@@ -291,3 +291,4 @@ FodyWeavers.xsd
 
 # 加入.github/
 .github/*
+!.github/workflows/
