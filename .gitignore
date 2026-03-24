@@ -287,4 +287,7 @@ FodyWeavers.xsd
 .idea/
 
 # 文档资料
-Ai资料/*
+./AI资料/*.md
+
+# 加入.github/
+.github/*
