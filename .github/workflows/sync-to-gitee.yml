@@ -1,5 +1,8 @@
 name: Sync to Gitee
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches: [ main ]
@@ -10,14 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 0
     
     - name: Mirror to Gitee
       uses: wearerequired/git-mirror-action@v1.2.0
       env:
-        SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVIATE_KEY }}
+        SSH_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
       with:
         source-repo: "https://github.com/${{ github.repository }}.git"
         destination-repo: "git@gitee.com:${{ github.repository }}.git"
