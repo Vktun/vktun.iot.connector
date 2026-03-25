@@ -1,6 +1,6 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/Vktun.IoT.Connector.Api/Vktun.IoT.Connector.csproj" />
+    <Project Path="src/Vktun.IoT.Connector/Vktun.IoT.Connector.csproj" />
     <Project Path="src/Vktun.IoT.Connector.Business/Vktun.IoT.Connector.Business.csproj" />
     <Project Path="src/Vktun.IoT.Connector.Communication/Vktun.IoT.Connector.Communication.csproj" />
     <Project Path="src/Vktun.IoT.Connector.Concurrency/Vktun.IoT.Connector.Concurrency.csproj" />
@@ -12,5 +12,6 @@
   </Folder>
   <Folder Name="/demo/">
     <Project Path="demo/Vktun.IoT.Connector.Demo/Vktun.IoT.Connector.Demo.csproj" />
+    <Project Path="demo/Vktun.IoT.Connector.Client/Vktun.IoT.Connector.Client.csproj" />
   </Folder>
 </Solution>

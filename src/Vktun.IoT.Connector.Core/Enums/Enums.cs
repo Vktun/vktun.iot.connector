@@ -52,7 +52,8 @@ public enum DataType
     Double,
     Ascii,
     UnicodeString,
-    Bcd
+    Bcd,
+    bit
 }
 
 public enum CheckType

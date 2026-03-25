@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Api\Vktun.IoT.Connector.csproj" />
+    <ProjectReference Include="..\..\src\Vktun.IoT.Connector\Vktun.IoT.Connector.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Business\Vktun.IoT.Connector.Business.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Communication\Vktun.IoT.Connector.Communication.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />
@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.IO.Ports" Version="9.0.0" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.5" />
   </ItemGroup>
 
   <ItemGroup>
