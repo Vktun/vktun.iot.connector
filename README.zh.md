@@ -10,76 +10,22 @@
 Vktun.IoT.Connector/
 ├── src/                                    # 源代码目录
 │   ├── Vktun.IoT.Connector/               # 应用接口层 - SDK入口API
-│   │   ├── IIoTDataCollector.cs           # 数据采集器接口
-│   │   └── IoTDataCollector.cs            # 数据采集器实现
 │   │
 │   ├── Vktun.IoT.Connector.Business/      # 业务逻辑层 - 核心业务处理
-│   │   ├── Managers/
-│   │   │   ├── DeviceManager.cs           # 设备管理器
-│   │   │   ├── SessionManager.cs          # 会话管理器
-│   │   │   └── HeartbeatManager.cs        # 心跳管理器
-│   │   └── Providers/
-│   │       └── DataProvider.cs            # 数据提供者
 │   │
 │   ├── Vktun.IoT.Connector.Concurrency/   # 并发调度层 - 任务调度与资源监控
-│   │   ├── Schedulers/
-│   │   │   └── TaskScheduler.cs           # 任务调度器
-│   │   ├── Queues/
-│   │   │   └── AsyncQueue.cs              # 异步队列
-│   │   └── Monitors/
-│   │       └── ResourceMonitor.cs         # 资源监控器
 │   │
 │   ├── Vktun.IoT.Connector.Communication/ # 通信适配层 - 通信通道实现
-│   │   └── Channels/
-│   │       ├── CommunicationChannelBase.cs# 通信通道基类
-│   │       ├── TcpServerChannel.cs        # TCP服务端通道
-│   │       └── UdpChannel.cs              # UDP通道
 │   │
 │   ├── Vktun.IoT.Connector.Serial/        # 串口通信模块 - 独立串口采集包
-│   │   ├── Channels/
-│   │   │   ├── SerialChannelBase.cs       # 串口通道基类
-│   │   │   └── SerialChannel.cs           # 串口通道实现
-│   │   └── Drivers/
-│   │       └── SerialPortDriver.cs        # 串口驱动(Windows API封装)
 │   │
 │   ├── Vktun.IoT.Connector.Driver/        # 底层驱动层 - 硬件驱动封装
-│   │   └── Sockets/
-│   │       └── SocketDriver.cs            # Socket驱动
 │   │
 │   ├── Vktun.IoT.Connector.Protocol/      # 协议解析层 - 协议解析器
-│   │   ├── Parsers/
-│   │   │   ├── CustomProtocolParser.cs    # 自定义协议解析器
-│   │   │   ├── ModbusRtuParser.cs         # Modbus RTU解析器
-│   │   │   └── ModbusTcpParser.cs         # Modbus TCP解析器
-│   │   ├── Factories/
-│   │   │   └── ProtocolParserFactory.cs   # 协议解析器工厂
-│   │   └── Templates/                     # JSON配置模板
-│   │       ├── ModbusRtuTemplate.json     # Modbus RTU配置模板
-│   │       └── ModbusTcpTemplate.json     # Modbus TCP配置模板
 │   │
 │   ├── Vktun.IoT.Connector.Configuration/ # 配置管理层 - 配置与日志
-│   │   ├── Providers/
-│   │   │   └── JsonConfigurationProvider.cs# JSON配置提供者
-│   │   └── Logging/
-│   │       └── Logger.cs                  # 日志接口
 │   │
 │   └── Vktun.IoT.Connector.Core/          # 核心层 - 接口与模型定义
-│       ├── Interfaces/                    # 核心接口
-│       │   ├── IDeviceManager.cs          # 设备管理接口
-│       │   ├── ISessionManager.cs         # 会话管理接口
-│       │   ├── ICommunicationChannel.cs   # 通信通道接口
-│       │   ├── IProtocolParser.cs         # 协议解析接口
-│       │   ├── IDataProvider.cs           # 数据提供接口
-│       │   └── ITaskScheduler.cs          # 任务调度接口
-│       ├── Models/                        # 数据模型
-│       │   ├── ConfigModels.cs            # 配置模型
-│       │   ├── DeviceModels.cs            # 设备模型
-│       │   ├── ProtocolModels.cs          # 协议模型
-│       │   └── ModbusModels.cs            # Modbus模型
-│       ├── Enums/
-│       │   └── Enums.cs                   # 枚举定义
-│       └── Utils/
-│           └── CrcCalculator.cs           # CRC校验工具
 │
 └── demo/                                  # 示例程序
     └── Vktun.IoT.Connector.Demo/

@@ -10,76 +10,22 @@ Industrial device data acquisition SDK, supporting multiple communication method
 Vktun.IoT.Connector/
 ├── src/                                    # Source Code Directory
 │   ├── Vktun.IoT.Connector/               # Application Interface Layer - SDK Entry API
-│   │   ├── IIoTDataCollector.cs           # Data Collector Interface
-│   │   └── IoTDataCollector.cs            # Data Collector Implementation
 │   │
 │   ├── Vktun.IoT.Connector.Business/      # Business Logic Layer - Core Business Processing
-│   │   ├── Managers/
-│   │   │   ├── DeviceManager.cs           # Device Manager
-│   │   │   ├── SessionManager.cs          # Session Manager
-│   │   │   └── HeartbeatManager.cs        # Heartbeat Manager
-│   │   └── Providers/
-│   │       └── DataProvider.cs            # Data Provider
 │   │
 │   ├── Vktun.IoT.Connector.Concurrency/   # Concurrency Scheduling Layer
-│   │   ├── Schedulers/
-│   │   │   └── TaskScheduler.cs           # Task Scheduler
-│   │   ├── Queues/
-│   │   │   └── AsyncQueue.cs              # Async Queue
-│   │   └── Monitors/
-│   │       └── ResourceMonitor.cs         # Resource Monitor
 │   │
 │   ├── Vktun.IoT.Connector.Communication/ # Communication Adapter Layer
-│   │   └── Channels/
-│   │       ├── CommunicationChannelBase.cs# Communication Channel Base
-│   │       ├── TcpServerChannel.cs        # TCP Server Channel
-│   │       └── UdpChannel.cs              # UDP Channel
 │   │
 │   ├── Vktun.IoT.Connector.Serial/        # Serial Communication Module - Independent Package
-│   │   ├── Channels/
-│   │   │   ├── SerialChannelBase.cs       # Serial Channel Base
-│   │   │   └── SerialChannel.cs           # Serial Channel Implementation
-│   │   └── Drivers/
-│   │       └── SerialPortDriver.cs        # Serial Port Driver (Windows API Wrapper)
 │   │
 │   ├── Vktun.IoT.Connector.Driver/        # Hardware Driver Layer
-│   │   └── Sockets/
-│   │       └── SocketDriver.cs            # Socket Driver
 │   │
 │   ├── Vktun.IoT.Connector.Protocol/      # Protocol Parsing Layer
-│   │   ├── Parsers/
-│   │   │   ├── CustomProtocolParser.cs    # Custom Protocol Parser
-│   │   │   ├── ModbusRtuParser.cs         # Modbus RTU Parser
-│   │   │   └── ModbusTcpParser.cs         # Modbus TCP Parser
-│   │   ├── Factories/
-│   │   │   └── ProtocolParserFactory.cs   # Protocol Parser Factory
-│   │   └── Templates/                     # JSON Configuration Templates
-│   │       ├── ModbusRtuTemplate.json     # Modbus RTU Template
-│   │       └── ModbusTcpTemplate.json     # Modbus TCP Template
 │   │
 │   ├── Vktun.IoT.Connector.Configuration/ # Configuration Management Layer
-│   │   ├── Providers/
-│   │   │   └── JsonConfigurationProvider.cs# JSON Configuration Provider
-│   │   └── Logging/
-│   │       └── Logger.cs                  # Logger Interface
 │   │
 │   └── Vktun.IoT.Connector.Core/          # Core Layer - Interfaces & Models
-│       ├── Interfaces/                    # Core Interfaces
-│       │   ├── IDeviceManager.cs          # Device Management Interface
-│       │   ├── ISessionManager.cs         # Session Management Interface
-│       │   ├── ICommunicationChannel.cs   # Communication Channel Interface
-│       │   ├── IProtocolParser.cs         # Protocol Parser Interface
-│       │   ├── IDataProvider.cs           # Data Provider Interface
-│       │   └── ITaskScheduler.cs          # Task Scheduler Interface
-│       ├── Models/                        # Data Models
-│       │   ├── ConfigModels.cs            # Configuration Models
-│       │   ├── DeviceModels.cs            # Device Models
-│       │   ├── ProtocolModels.cs          # Protocol Models
-│       │   └── ModbusModels.cs            # Modbus Models
-│       ├── Enums/
-│       │   └── Enums.cs                   # Enumerations
-│       └── Utils/
-│           └── CrcCalculator.cs           # CRC Check Utilities
 │
 └── demo/                                  # Demo Application
     └── Vktun.IoT.Connector.Demo/

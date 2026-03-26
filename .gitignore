@@ -292,3 +292,9 @@ FodyWeavers.xsd
 # 加入.github/
 .github/*
 !.github/workflows/
+
+# 忽略.github/workflows/目录下的所有文件
+.github/workflows/*
+
+.trae/
+.trae/*
