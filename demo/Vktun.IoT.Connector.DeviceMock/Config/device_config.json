@@ -1,0 +1,52 @@
+{
+  "devices": [
+    {
+      "deviceId": "MODBUS_TCP_001",
+      "deviceName": "Modbus TCP模拟设备",
+      "protocolType": "ModbusTcp",
+      "communicationType": "Tcp",
+      "port": 502,
+      "slaveId": 1,
+      "enabled": true,
+      "dataPoints": [
+        {
+          "pointName": "温度",
+          "address": "40001",
+          "dataType": "Float",
+          "simulationType": "Sine",
+          "minValue": 20.0,
+          "maxValue": 30.0,
+          "updateInterval": 1000
+        },
+        {
+          "pointName": "压力",
+          "address": "40003",
+          "dataType": "Float",
+          "simulationType": "Random",
+          "minValue": 0.0,
+          "maxValue": 100.0,
+          "updateInterval": 500
+        },
+        {
+          "pointName": "流量",
+          "address": "40005",
+          "dataType": "Float",
+          "simulationType": "Linear",
+          "minValue": 0.0,
+          "maxValue": 1000.0,
+          "updateInterval": 2000
+        },
+        {
+          "pointName": "运行状态",
+          "address": "00001",
+          "dataType": "UInt16",
+          "simulationType": "Static",
+          "initialValue": 1,
+          "minValue": 0,
+          "maxValue": 1,
+          "updateInterval": 5000
+        }
+      ]
+    }
+  ]
+}

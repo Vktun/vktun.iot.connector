@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Vktun.IoT.Connector.DeviceMock</AssemblyName>
+    <RootNamespace>Vktun.IoT.Connector.DeviceMock</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />
+    <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Protocol\Vktun.IoT.Connector.Protocol.csproj" />
+    <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Config\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

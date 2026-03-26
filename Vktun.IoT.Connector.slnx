@@ -13,5 +13,6 @@
   <Folder Name="/demo/">
     <Project Path="demo/Vktun.IoT.Connector.Demo/Vktun.IoT.Connector.Demo.csproj" />
     <Project Path="demo/Vktun.IoT.Connector.Client/Vktun.IoT.Connector.Client.csproj" />
+    <Project Path="demo/Vktun.IoT.Connector.DeviceMock/Vktun.IoT.Connector.DeviceMock.csproj" />
   </Folder>
 </Solution>
