@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Protocol\Vktun.IoT.Connector.Protocol.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />

@@ -4,6 +4,7 @@ using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.DeviceMock.Models;
 using Vktun.IoT.Connector.DeviceMock.Protocols.Modbus;
+using Vktun.IoT.Connector.DeviceMock.Protocols.Siemens;
 using Vktun.IoT.Connector.DeviceMock.Services;
 
 namespace Vktun.IoT.Connector.DeviceMock;
@@ -31,6 +32,12 @@ class Program
             var modbusServer = new ModbusTcpServer("MODBUS_TCP_001", 1, 502, modbusDataStore, logger);
             deviceManager.RegisterSimulator(modbusServer);
             
+            var s7DataManager = new S7DataBlockManager();
+            s7DataManager.Initialize(100, 65536, 1024, 1024, 1024);
+            
+            var s7Server = new S7Server("S7_1200_001", 102, s7DataManager, logger);
+            deviceManager.RegisterSimulator(s7Server);
+            
             var cts = new CancellationTokenSource();
             
             Console.CancelKeyPress += (sender, e) =>
@@ -47,6 +54,7 @@ class Program
             Console.WriteLine();
             Console.WriteLine("已启动的服务:");
             Console.WriteLine("  - Modbus TCP Server: 端口 502");
+            Console.WriteLine("  - S7 Server: 端口 102");
             Console.WriteLine();
             
             while (!cts.Token.IsCancellationRequested)

@@ -1,25 +1,42 @@
 # Vktun.IoT.Connector.DeviceMock
 
-工业设备模拟器项目，## 项目概述
-
-本项目用于模拟各种工业设备（Modbus、西门子S7、三菱、欧姆龙等），支持多种通讯方式（TCP、UDP、串口）和协议，为客户端测试和开发提供模拟环境。
+工业设备模拟器项目，用于模拟各种工业设备（Modbus、西门子S7、三菱、欧姆龙等），支持多种通讯方式（TCP、UDP、串口）和协议，为客户端测试和开发提供模拟环境。
 
 ## 功能特性
 
 ### 已实现功能
 
-- **Modbus TCP服务器**
-  - 支持所有标准功能码（01/02/03/04/05/06/0F/10）
-  - 支持多客户端连接
-  - 支持线圈、离散输入、输入寄存器、保持寄存器
-  - 支持数据模拟（静态、随机、正弦、线性、阶跃）
+#### 1. Modbus TCP服务器 ✅
+- 支持所有标准功能码（01/02/03/04/05/06/0F/10）
+- 支持多客户端连接
+- 支持线圈、离散输入、输入寄存器、保持寄存器
+- 支持数据模拟（静态、随机、正弦、线性、阶跃）
+
+#### 2. 西门子S7服务器 ✅
+- 支持S7-200/300/400/1200/1500系列
+- 支持读写DB块（DB1-DB65535）
+- 支持读写I/Q/M区
+- 支持多种数据类型（Bit, Byte, Word, DWord, Real）
+- 支持TPKT和ISO-on-TCP协议
+- 支持多客户端连接
+
+#### 3. 数据记录和回放功能 ✅
+- 基于SQLite数据库的数据存储
+- 支持多设备同时记录
+- 支持按时间范围查询
+- 支持数据回放速度控制
+- 支持数据导出（CSV、Excel、JSON）
+
+#### 4. 性能监控和统计功能 ✅
+- 实时性能监控（CPU、内存、线程）
+- 连接数统计
+- 请求响应时间统计
+- 数据吞吐量统计
+- 错误率统计
+- 性能报告生成
 
 ### 计划实现功能
 
-- **西门子S7服务器**
-  - 支持S7-200/300/400/1200/1500系列
-  - 支持读写DB块、I/Q/M区
-  
 - **三菱MC协议服务器**
   - 支持Qna_3E、Q_3E等系列
   - 支持读写M、D、X、Y等区域
@@ -32,43 +49,42 @@
 
 ```
 Vktun.IoT.Connector.DeviceMock/
-├── Models/                      # 数据模型
-│   ├── MockDeviceConfig.cs      # 设备配置模型
-│   ├── MockDataPoint.cs         # 数据点模型
-│   └── DeviceMockConfig.cs      # 配置文件模型
+├── Models/                              # 数据模型
+│   ├── MockDeviceConfig.cs              # 设备配置模型
+│   ├── MockDataPoint.cs                 # 数据点模型
+│   └── DeviceMockConfig.cs              # 配置文件模型
 │
-├── Services/                   # 服务层
-│   ├── IDeviceSimulator.cs     # 设备模拟器接口
-│   ├── DataSimulator.cs        # 数据模拟服务
-│   └── DeviceManager.cs        # 设备管理器
-│
-├── Protocols/                  # 协议实现
-│   ├── Modbus/                 # Modbus协议
-│   │   ├── ModbusTcpServer.cs   # Modbus TCP服务器
-│   │   └── ModbusDataStore.cs   # Modbus数据存储
+├── Services/                            # 服务层
+│   ├── IDeviceSimulator.cs              # 设备模拟器接口
+│   ├── DataSimulator.cs                 # 数据模拟服务
+│   ├── DeviceManager.cs                 # 设备管理器
 │   │
-│   ├── Siemens/                # 西门子S7协议（计划中）
-│   │   ├── S7Server.cs
-│   │   ├── S7DataBlockManager.cs
-│   │   └── S7ProtocolHandler.cs
+│   ├── Recording/                       # 数据记录
+│   │   ├── DataRecordingService.cs      # 数据记录服务
+│   │   ├── DataRecorder.cs              # 数据记录器
+│   │   └── DataPlayer.cs                # 数据回放器
 │   │
-│   ├── Mitsubishi/             # 三菱MC协议（计划中）
-│   │   ├── MitsubishiServer.cs
-│   │   └── MitsubishiDataStore.cs
+│   └── Monitoring/                      # 性能监控
+│       └── PerformanceMonitor.cs        # 性能监控器
+│
+├── Protocols/                           # 协议实现
+│   ├── Modbus/                          # Modbus协议
+│   │   ├── ModbusTcpServer.cs           # Modbus TCP服务器
+│   │   └── ModbusDataStore.cs           # Modbus数据存储
 │   │
-│   └── Omron/                  # 欧姆龙FINS协议（计划中）
-│       ├── OmronFinsServer.cs
-│       └── OmronDataStore.cs
+│   └── Siemens/                         # 西门子S7协议
+│       ├── S7Server.cs                  # S7服务器
+│       ├── S7DataBlockManager.cs        # DB块管理器
+│       └── S7ProtocolHandler.cs         # S7协议处理器
 │
-├── Communication/               # 通信层
-│   ├── TcpServerBase.cs        # TCP服务器基类
-│   ├── UdpServerBase.cs        # UDP服务器基类
-│   └── SerialPortSimulator.cs  # 串口模拟器（计划中）
+├── Communication/                       # 通信层
+│   ├── TcpServerBase.cs                 # TCP服务器基类
+│   └── UdpServerBase.cs                 # UDP服务器基类
 │
-├── Config/                     # 配置文件
-│   └── device_config.json      # 设备配置示例
+├── Config/                              # 配置文件
+│   └── device_config.json               # 设备配置示例
 │
-└── Program.cs                  # 主程序入口
+└── Program.cs                           # 主程序入口
 ```
 
 ## 快速开始
@@ -113,7 +129,8 @@ dotnet run
 
 ### 3. 测试连接
 
-使用Modbus客户端工具（如Modbus Poll、IoTClient.Tool等）连接到 `localhost:502` 进行测试。
+- **Modbus TCP**: 使用Modbus客户端工具连接到 `localhost:502`
+- **S7**: 使用S7客户端工具连接到 `localhost:102`
 
 ## 数据模拟类型
 
@@ -130,6 +147,63 @@ dotnet run
 - **30001-39999**: 输入寄存器（Input Registers）
 - **40001-49999**: 保持寄存器（Holding Registers）
 
+## S7地址格式
+
+- **DB块**: `DB1.DBW0` (DB1的字地址0), `DB1.DBX0.0` (DB1的位地址0.0)
+- **I区**: `I0.0` (位), `IW0` (字)
+- **Q区**: `Q0.0` (位), `QW0` (字)
+- **M区**: `M0.0` (位), `MW0` (字)
+
+## 数据记录和回放
+
+### 开始记录
+
+```csharp
+var recorder = new DataRecorder(logger, recordingService);
+await recorder.StartRecordingAsync("DEVICE_001", dataPoints, "测试记录");
+```
+
+### 停止记录
+
+```csharp
+await recorder.StopRecordingAsync();
+```
+
+### 回放数据
+
+```csharp
+var player = new DataPlayer(logger, recordingService);
+await player.LoadSessionAsync(sessionId);
+player.StartPlayback((address, value) =>
+{
+    Console.WriteLine($"{address}: {value}");
+});
+```
+
+## 性能监控
+
+### 启动监控
+
+```csharp
+var monitor = new PerformanceMonitor(logger);
+monitor.StartMonitoring(1000); // 每秒更新一次
+```
+
+### 记录性能数据
+
+```csharp
+monitor.IncrementCounter("Requests");
+monitor.RecordDuration("ResponseTime", duration);
+```
+
+### 生成报告
+
+```csharp
+var report = monitor.GenerateReport();
+Console.WriteLine($"平均CPU使用率: {report.AverageCpuUsage:F2}%");
+Console.WriteLine($"平均内存使用: {report.AverageMemoryUsage:F2} MB");
+```
+
 ## 开发计划
 
 ### 第一阶段 ✅
@@ -139,29 +213,31 @@ dotnet run
 - [x] 通信层基类
 - [x] Modbus TCP服务器
 
-### 第二阶段 🚧
-- [ ] 西门子S7服务器
+### 第二阶段 ✅
+- [x] 西门子S7服务器
+- [x] 数据记录和回放功能
+- [x] 性能监控和统计功能
+
+### 第三阶段 🚧
 - [ ] 三菱MC服务器
 - [ ] 欧姆龙FINS服务器
-
-### 第三阶段 📋
 - [ ] Web管理界面
-- [ ] 数据记录和回放
-- [ ] 性能监控
 
 ## 技术栈
 
 - **.NET 10.0**
 - **TCP/UDP/串口通信**
+- **SQLite数据库**
 - **JSON配置**
 - **异步编程**
 
 ## 注意事项
 
-1. **端口权限**: Modbus TCP默认使用502端口，可能需要管理员权限
+1. **端口权限**: Modbus TCP默认使用502端口，S7默认使用102端口，可能需要管理员权限
 2. **防火墙**: 确保防火墙允许相应端口的通信
 3. **数据类型**: 注意不同协议支持的数据类型差异
 4. **并发处理**: 服务器支持多客户端并发连接
+5. **性能**: 建议在性能监控下运行，避免资源耗尽
 
 ## 测试工具推荐
 
