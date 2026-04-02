@@ -2,6 +2,9 @@ using System.Collections.Concurrent;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
+using Vktun.IoT.Connector.Serial.Drivers;
+using DriverParity = Vktun.IoT.Connector.Serial.Drivers.Parity;
+using DriverStopBits = Vktun.IoT.Connector.Serial.Drivers.StopBits;
 
 namespace Vktun.IoT.Connector.Serial.Channels;
 
@@ -12,12 +15,12 @@ public class SerialChannel : SerialChannelBase
     private readonly int _dataBits;
     private readonly Parity _parity;
     private readonly StopBits _stopBits;
-    private CancellationTokenSource? _cancellationTokenSource;
-    private readonly ConcurrentQueue<byte[]> _receiveQueue;
-    private readonly object _serialPortLock = new();
+    private readonly ConcurrentQueue<byte[]> _receiveQueue = new();
+    private readonly ISerialPortDriver _serialPortDriver;
+    private CancellationTokenSource? _receiveLoopCts;
 
     public override CommunicationType CommunicationType => CommunicationType.Serial;
-    public override ConnectionMode ConnectionMode => ConnectionMode.Server;
+    public override ConnectionMode ConnectionMode => ConnectionMode.Client;
 
     public SerialChannel(
         string portName,
@@ -26,56 +29,76 @@ public class SerialChannel : SerialChannelBase
         ILogger logger,
         int dataBits = 8,
         Parity parity = Parity.None,
-        StopBits stopBits = StopBits.One) : base(configProvider, logger)
+        StopBits stopBits = StopBits.One)
+        : base(configProvider, logger)
     {
         _portName = portName;
         _baudRate = baudRate;
         _dataBits = dataBits;
         _parity = parity;
         _stopBits = stopBits;
-        _receiveQueue = new ConcurrentQueue<byte[]>();
-        
+        _serialPortDriver = new SerialPortDriver(
+            portName,
+            baudRate,
+            configProvider,
+            logger,
+            dataBits,
+            MapParity(parity),
+            MapStopBits(stopBits));
+
         ChannelId = $"Serial_{portName}";
     }
 
-    public override Task<bool> OpenAsync(CancellationToken cancellationToken = default)
+    public override async Task<bool> OpenAsync(CancellationToken cancellationToken = default)
     {
         if (_isConnected)
         {
-            return Task.FromResult(true);
+            return true;
         }
 
         try
         {
-            _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var opened = await _serialPortDriver.OpenAsync().ConfigureAwait(false);
+            if (!opened)
+            {
+                return false;
+            }
+
             _isConnected = true;
-            
-            _logger.Info($"串口通道启动成功: {_portName}, 波特率: {_baudRate}");
-            return Task.FromResult(true);
+            _receiveLoopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _ = ReceiveLoopAsync(_receiveLoopCts.Token);
+            _logger.Info($"Serial channel opened on {_portName} @ {_baudRate}");
+            return true;
         }
         catch (Exception ex)
         {
-            _logger.Error($"串口通道启动失败: {ex.Message}", ex);
-            return Task.FromResult(false);
+            _logger.Error($"Failed to open serial channel {_portName}: {ex.Message}", ex);
+            return false;
         }
     }
 
-    public override Task CloseAsync()
+    public override async Task CloseAsync()
     {
         if (!_isConnected)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         _isConnected = false;
-        _cancellationTokenSource?.Cancel();
-        _cancellationTokenSource?.Dispose();
-        
-        _connections.Clear();
-        _receiveQueue.Clear();
-        
-        _logger.Info("串口通道已关闭");
-        return Task.CompletedTask;
+        _receiveLoopCts?.Cancel();
+        _receiveLoopCts?.Dispose();
+        _receiveLoopCts = null;
+
+        var deviceIds = _connections.Keys.ToArray();
+        foreach (var deviceId in deviceIds)
+        {
+            await DisconnectDeviceAsync(deviceId).ConfigureAwait(false);
+        }
+
+        await _serialPortDriver.CloseAsync().ConfigureAwait(false);
+        while (_receiveQueue.TryDequeue(out _))
+        {
+        }
     }
 
     public override Task<int> SendAsync(string deviceId, byte[] data, CancellationToken cancellationToken = default)
@@ -92,19 +115,19 @@ public class SerialChannel : SerialChannelBase
 
         try
         {
-            await Task.Delay(10, cancellationToken);
-            
+            var buffer = data.ToArray();
+            var bytesWritten = await _serialPortDriver.WriteAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
             if (_connections.TryGetValue(deviceId, out var connection))
             {
-                connection.BytesSent += data.Length;
+                connection.BytesSent += bytesWritten;
                 connection.LastActiveTime = DateTime.Now;
             }
-            
-            return data.Length;
+
+            return bytesWritten;
         }
         catch (Exception ex)
         {
-            OnErrorOccurred(deviceId, "串口发送数据失败", ex);
+            OnErrorOccurred(deviceId, $"Failed to send serial data: {ex.Message}", ex);
             return 0;
         }
     }
@@ -117,38 +140,108 @@ public class SerialChannel : SerialChannelBase
             {
                 yield return new ReceivedData
                 {
-                    DeviceId = "Serial",
+                    DeviceId = _connections.Keys.FirstOrDefault() ?? "Serial",
                     Data = data,
                     Timestamp = DateTime.Now
                 };
             }
             else
             {
-                await Task.Delay(10, cancellationToken);
+                await Task.Delay(10, cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
-    public override Task<bool> ConnectDeviceAsync(DeviceInfo device, CancellationToken cancellationToken = default)
+    public override async Task<bool> ConnectDeviceAsync(DeviceInfo device, CancellationToken cancellationToken = default)
     {
-        var connection = new DeviceConnection
+        if (!_isConnected && !await OpenAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        _connections[device.DeviceId] = new DeviceConnection
         {
             DeviceId = device.DeviceId,
             ConnectTime = DateTime.Now,
-            LastActiveTime = DateTime.Now
+            LastActiveTime = DateTime.Now,
+            ReceiveBuffer = new byte[_configProvider.GetConfig().Global.BufferSize],
+            CancellationTokenSource = new CancellationTokenSource()
         };
-        
-        _connections[device.DeviceId] = connection;
+
         OnDeviceConnected(device.DeviceId, device);
-        
-        return Task.FromResult(true);
+        return true;
     }
 
     public override Task DisconnectDeviceAsync(string deviceId)
     {
-        _connections.TryRemove(deviceId, out _);
-        OnDeviceDisconnected(deviceId, "主动断开");
+        if (_connections.TryRemove(deviceId, out var connection))
+        {
+            connection.CancellationTokenSource?.Cancel();
+            connection.CancellationTokenSource?.Dispose();
+            OnDeviceDisconnected(deviceId, "Disconnected");
+        }
+
         return Task.CompletedTask;
+    }
+
+    private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
+    {
+        var buffer = new byte[_configProvider.GetConfig().Global.BufferSize];
+
+        while (!cancellationToken.IsCancellationRequested && _isConnected)
+        {
+            try
+            {
+                var bytesRead = await _serialPortDriver.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+                if (bytesRead <= 0)
+                {
+                    await Task.Delay(_configProvider.GetConfig().Serial.ReceivePollingInterval, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                var data = new byte[bytesRead];
+                Buffer.BlockCopy(buffer, 0, data, 0, bytesRead);
+                _receiveQueue.Enqueue(data);
+
+                foreach (var connection in _connections.Values)
+                {
+                    connection.BytesReceived += bytesRead;
+                    connection.LastActiveTime = DateTime.Now;
+                    OnDataReceived(connection.DeviceId, data);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred(string.Empty, $"Failed to receive serial data: {ex.Message}", ex);
+                await Task.Delay(_configProvider.GetConfig().Serial.ReceivePollingInterval, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static DriverParity MapParity(Parity parity)
+    {
+        return parity switch
+        {
+            Parity.Odd => DriverParity.Odd,
+            Parity.Even => DriverParity.Even,
+            Parity.Mark => DriverParity.Mark,
+            Parity.Space => DriverParity.Space,
+            _ => DriverParity.None
+        };
+    }
+
+    private static DriverStopBits MapStopBits(StopBits stopBits)
+    {
+        return stopBits switch
+        {
+            StopBits.OnePointFive => DriverStopBits.OnePointFive,
+            StopBits.Two => DriverStopBits.Two,
+            _ => DriverStopBits.One
+        };
     }
 }
 

@@ -7,52 +7,53 @@ namespace Vktun.IoT.Connector.Business.Managers;
 
 public class DeviceManager : IDeviceManager
 {
-    private readonly ConcurrentDictionary<string, DeviceInfo> _devices;
-    private readonly ConcurrentDictionary<string, DeviceStatus> _deviceStatuses;
+    private readonly ConcurrentDictionary<string, DeviceInfo> _devices = new();
+    private readonly ConcurrentDictionary<string, DeviceStatus> _deviceStatuses = new();
     private readonly ISessionManager _sessionManager;
-    private readonly IConfigurationProvider _configProvider;
+    private readonly IDeviceCommandExecutor _commandExecutor;
     private readonly ILogger _logger;
 
     public event EventHandler<DeviceStatusChangedEventArgs>? DeviceStatusChanged;
 
     public DeviceManager(
         ISessionManager sessionManager,
-        IConfigurationProvider configProvider,
+        IDeviceCommandExecutor commandExecutor,
         ILogger logger)
     {
-        _devices = new ConcurrentDictionary<string, DeviceInfo>();
-        _deviceStatuses = new ConcurrentDictionary<string, DeviceStatus>();
         _sessionManager = sessionManager;
-        _configProvider = configProvider;
+        _commandExecutor = commandExecutor;
         _logger = logger;
     }
 
     public Task<bool> AddDeviceAsync(DeviceInfo device)
     {
-        if (string.IsNullOrEmpty(device.DeviceId))
+        if (string.IsNullOrWhiteSpace(device.DeviceId))
         {
             return Task.FromResult(false);
         }
 
-        var result = _devices.TryAdd(device.DeviceId, device);
-        if (result)
+        var added = _devices.TryAdd(device.DeviceId, device);
+        if (added)
         {
             _deviceStatuses[device.DeviceId] = DeviceStatus.Offline;
-            _logger.Info($"设备添加成功: {device.DeviceId}");
+            _logger.Info($"Device added: {device.DeviceId}");
         }
-        return Task.FromResult(result);
+
+        return Task.FromResult(added);
     }
 
-    public Task<bool> RemoveDeviceAsync(string deviceId)
+    public async Task<bool> RemoveDeviceAsync(string deviceId)
     {
-        var result = _devices.TryRemove(deviceId, out _);
-        if (result)
+        await DisconnectDeviceAsync(deviceId).ConfigureAwait(false);
+        var removed = _devices.TryRemove(deviceId, out _);
+        if (removed)
         {
             _deviceStatuses.TryRemove(deviceId, out _);
-            _sessionManager.RemoveSessionAsync(deviceId);
-            _logger.Info($"设备移除成功: {deviceId}");
+            await _sessionManager.RemoveSessionAsync(deviceId).ConfigureAwait(false);
+            _logger.Info($"Device removed: {deviceId}");
         }
-        return Task.FromResult(result);
+
+        return removed;
     }
 
     public Task<DeviceInfo?> GetDeviceAsync(string deviceId)
@@ -63,37 +64,39 @@ public class DeviceManager : IDeviceManager
 
     public Task<IEnumerable<DeviceInfo>> GetAllDevicesAsync()
     {
-        return Task.FromResult(_devices.Values.AsEnumerable());
+        return Task.FromResult<IEnumerable<DeviceInfo>>(_devices.Values.ToArray());
     }
 
     public Task<IEnumerable<DeviceInfo>> GetDevicesByStatusAsync(DeviceStatus status)
     {
-        var devices = _devices.Values
-            .Where(d => _deviceStatuses.TryGetValue(d.DeviceId, out var s) && s == status);
-        return Task.FromResult(devices);
+        var devices = _devices.Values.Where(device =>
+            _deviceStatuses.TryGetValue(device.DeviceId, out var currentStatus) && currentStatus == status);
+        return Task.FromResult<IEnumerable<DeviceInfo>>(devices.ToArray());
     }
 
     public Task<bool> UpdateDeviceStatusAsync(string deviceId, DeviceStatus status)
     {
-        if (!_deviceStatuses.TryGetValue(deviceId, out var oldStatus))
+        if (!_deviceStatuses.TryGetValue(deviceId, out var previousStatus))
         {
             return Task.FromResult(false);
         }
 
         _deviceStatuses[deviceId] = status;
-        
         if (_devices.TryGetValue(deviceId, out var device))
         {
             device.Status = status;
-            device.LastConnectTime = status == DeviceStatus.Online ? DateTime.Now : device.LastConnectTime;
+            if (status == DeviceStatus.Online)
+            {
+                device.LastConnectTime = DateTime.Now;
+            }
         }
 
-        if (oldStatus != status)
+        if (previousStatus != status)
         {
             DeviceStatusChanged?.Invoke(this, new DeviceStatusChangedEventArgs
             {
                 DeviceId = deviceId,
-                OldStatus = oldStatus,
+                OldStatus = previousStatus,
                 NewStatus = status,
                 Timestamp = DateTime.Now
             });
@@ -104,53 +107,51 @@ public class DeviceManager : IDeviceManager
 
     public async Task<bool> ConnectDeviceAsync(string deviceId)
     {
-        var device = await GetDeviceAsync(deviceId);
+        var device = await GetDeviceAsync(deviceId).ConfigureAwait(false);
         if (device == null)
         {
             return false;
         }
 
-        await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Connecting);
-        
-        var session = await _sessionManager.CreateSessionAsync(device);
-        if (session != null)
+        await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Connecting).ConfigureAwait(false);
+        var connected = await _commandExecutor.ConnectAsync(device).ConfigureAwait(false);
+        if (!connected)
         {
-            await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Online);
-            return true;
+            await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Error).ConfigureAwait(false);
+            return false;
         }
 
-        await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Error);
-        return false;
+        await _sessionManager.CreateSessionAsync(device).ConfigureAwait(false);
+        await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Online).ConfigureAwait(false);
+        return true;
     }
 
     public async Task<bool> DisconnectDeviceAsync(string deviceId)
     {
-        var device = await GetDeviceAsync(deviceId);
+        var device = await GetDeviceAsync(deviceId).ConfigureAwait(false);
         if (device == null)
         {
             return false;
         }
 
-        await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Disconnecting);
-        await _sessionManager.RemoveSessionAsync(deviceId);
-        await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Offline);
-        
+        await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Disconnecting).ConfigureAwait(false);
+        await _commandExecutor.DisconnectAsync(deviceId).ConfigureAwait(false);
+        await _sessionManager.RemoveSessionAsync(deviceId).ConfigureAwait(false);
+        await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Offline).ConfigureAwait(false);
         return true;
     }
 
     public async Task<int> ConnectAllAsync()
     {
-        var devices = await GetAllDevicesAsync();
-        var tasks = devices.Select(d => ConnectDeviceAsync(d.DeviceId));
-        var results = await Task.WhenAll(tasks);
-        return results.Count(r => r);
+        var tasks = (await GetAllDevicesAsync().ConfigureAwait(false)).Select(device => ConnectDeviceAsync(device.DeviceId));
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return results.Count(result => result);
     }
 
     public async Task<int> DisconnectAllAsync()
     {
-        var devices = await GetAllDevicesAsync();
-        var tasks = devices.Select(d => DisconnectDeviceAsync(d.DeviceId));
-        var results = await Task.WhenAll(tasks);
-        return results.Count(r => r);
+        var tasks = (await GetAllDevicesAsync().ConfigureAwait(false)).Select(device => DisconnectDeviceAsync(device.DeviceId));
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return results.Count(result => result);
     }
 }

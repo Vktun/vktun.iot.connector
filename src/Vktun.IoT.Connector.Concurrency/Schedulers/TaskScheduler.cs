@@ -11,31 +11,40 @@ public class TaskScheduler : ITaskScheduler
     private readonly BlockingCollection<TaskItem> _taskQueue;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<CommandResult>> _taskResults;
     private readonly IConfigurationProvider _configProvider;
+    private readonly IDeviceCommandExecutor _commandExecutor;
+    private readonly IDeviceManager _deviceManager;
     private readonly ILogger _logger;
-    private readonly SemaphoreSlim _semaphore;
-    
+    private readonly SemaphoreSlim _workerSemaphore;
+
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _processorTask;
+    private int _runningTaskCount;
     private int _completedTaskCount;
     private bool _isRunning;
 
     public int PendingTaskCount => _taskQueue.Count;
-    public int RunningTaskCount => _semaphore.CurrentCount;
+    public int RunningTaskCount => _runningTaskCount;
     public int CompletedTaskCount => _completedTaskCount;
     public bool IsRunning => _isRunning;
 
     public event EventHandler<TaskCompletedEventArgs>? TaskCompleted;
     public event EventHandler<TaskFailedEventArgs>? TaskFailed;
 
-    public TaskScheduler(IConfigurationProvider configProvider, ILogger logger)
+    public TaskScheduler(
+        IConfigurationProvider configProvider,
+        IDeviceManager deviceManager,
+        IDeviceCommandExecutor commandExecutor,
+        ILogger logger)
     {
         _configProvider = configProvider;
+        _deviceManager = deviceManager;
+        _commandExecutor = commandExecutor;
         _logger = logger;
-        
+
         var config = configProvider.GetConfig();
         _taskQueue = new BlockingCollection<TaskItem>(config.ThreadPool.TaskQueueCapacity);
         _taskResults = new ConcurrentDictionary<string, TaskCompletionSource<CommandResult>>();
-        _semaphore = new SemaphoreSlim(config.ThreadPool.MaxWorkerThreads);
+        _workerSemaphore = new SemaphoreSlim(config.ThreadPool.MaxWorkerThreads);
     }
 
     public Task StartAsync(CancellationToken cancellationToken = default)
@@ -48,8 +57,7 @@ public class TaskScheduler : ITaskScheduler
         _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _isRunning = true;
         _processorTask = ProcessTasksAsync(_cancellationTokenSource.Token);
-        
-        _logger.Info("任务调度器启动");
+        _logger.Info("Task scheduler started.");
         return Task.CompletedTask;
     }
 
@@ -63,14 +71,14 @@ public class TaskScheduler : ITaskScheduler
         _isRunning = false;
         _cancellationTokenSource?.Cancel();
         _taskQueue.CompleteAdding();
-        
+
         if (_processorTask != null)
         {
-            await _processorTask;
+            await _processorTask.ConfigureAwait(false);
         }
-        
+
         _cancellationTokenSource?.Dispose();
-        _logger.Info("任务调度器停止");
+        _logger.Info("Task scheduler stopped.");
     }
 
     public Task<string> SubmitTaskAsync(DeviceCommand command, CancellationToken cancellationToken = default)
@@ -82,23 +90,23 @@ public class TaskScheduler : ITaskScheduler
     {
         var taskItem = new TaskItem
         {
-            TaskId = Guid.NewGuid().ToString(),
+            TaskId = Guid.NewGuid().ToString("N"),
             Command = command,
             Priority = priority,
             CreateTime = DateTime.Now
         };
 
-        var tcs = new TaskCompletionSource<CommandResult>();
-        _taskResults[taskItem.TaskId] = tcs;
+        var completionSource = new TaskCompletionSource<CommandResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _taskResults[taskItem.TaskId] = completionSource;
 
-        if (!_taskQueue.TryAdd(taskItem))
+        if (!_taskQueue.TryAdd(taskItem, Timeout.Infinite, cancellationToken))
         {
-            tcs.SetException(new InvalidOperationException("任务队列已满"));
-            _logger.Warning($"任务提交失败，队列已满: {taskItem.TaskId}");
-        }
-        else
-        {
-            _logger.Debug($"任务提交成功: {taskItem.TaskId}, 设备: {command.DeviceId}");
+            completionSource.TrySetResult(new CommandResult
+            {
+                CommandId = taskItem.TaskId,
+                Success = false,
+                ErrorMessage = "Task queue is full."
+            });
         }
 
         return Task.FromResult(taskItem.TaskId);
@@ -106,109 +114,109 @@ public class TaskScheduler : ITaskScheduler
 
     public async Task<CommandResult> GetTaskResultAsync(string taskId, CancellationToken cancellationToken = default)
     {
-        if (_taskResults.TryGetValue(taskId, out var tcs))
+        if (_taskResults.TryGetValue(taskId, out var completionSource))
         {
-            return await tcs.Task.WaitAsync(cancellationToken);
+            return await completionSource.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
-        
+
         return new CommandResult
         {
             CommandId = taskId,
             Success = false,
-            ErrorMessage = "任务不存在"
+            ErrorMessage = "Task result was not found."
         };
     }
 
     public Task<bool> CancelTaskAsync(string taskId)
     {
-        if (_taskResults.TryGetValue(taskId, out var tcs))
+        if (_taskResults.TryRemove(taskId, out var completionSource))
         {
-            tcs.TrySetCanceled();
-            _taskResults.TryRemove(taskId, out _);
+            completionSource.TrySetCanceled();
             return Task.FromResult(true);
         }
+
         return Task.FromResult(false);
     }
 
     public Task CancelAllTasksAsync()
     {
-        foreach (var kvp in _taskResults)
+        foreach (var taskResult in _taskResults.Values)
         {
-            kvp.Value.TrySetCanceled();
+            taskResult.TrySetCanceled();
         }
+
         _taskResults.Clear();
         return Task.CompletedTask;
     }
 
     private async Task ProcessTasksAsync(CancellationToken cancellationToken)
     {
-        var config = _configProvider.GetConfig();
-        
         foreach (var taskItem in _taskQueue.GetConsumingEnumerable(cancellationToken))
         {
-            await _semaphore.WaitAsync(cancellationToken);
-            
-            _ = Task.Run(async () =>
+            await _workerSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            _ = ProcessSingleTaskAsync(taskItem, cancellationToken);
+        }
+    }
+
+    private async Task ProcessSingleTaskAsync(TaskItem taskItem, CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref _runningTaskCount);
+        try
+        {
+            var result = await ExecuteTaskAsync(taskItem, cancellationToken).ConfigureAwait(false);
+            if (_taskResults.TryRemove(taskItem.TaskId, out var completionSource))
             {
-                try
+                completionSource.TrySetResult(result);
+            }
+
+            Interlocked.Increment(ref _completedTaskCount);
+            TaskCompleted?.Invoke(this, new TaskCompletedEventArgs
+            {
+                TaskId = taskItem.TaskId,
+                DeviceId = taskItem.Command.DeviceId,
+                Result = result,
+                Timestamp = DateTime.Now
+            });
+        }
+        catch (Exception ex)
+        {
+            if (_taskResults.TryRemove(taskItem.TaskId, out var completionSource))
+            {
+                completionSource.TrySetResult(new CommandResult
                 {
-                    var result = await ExecuteTaskAsync(taskItem, cancellationToken);
-                    
-                    if (_taskResults.TryGetValue(taskItem.TaskId, out var tcs))
-                    {
-                        tcs.SetResult(result);
-                        _taskResults.TryRemove(taskItem.TaskId, out _);
-                    }
-                    
-                    Interlocked.Increment(ref _completedTaskCount);
-                    
-                    TaskCompleted?.Invoke(this, new TaskCompletedEventArgs
-                    {
-                        TaskId = taskItem.TaskId,
-                        DeviceId = taskItem.Command.DeviceId,
-                        Result = result,
-                        Timestamp = DateTime.Now
-                    });
-                }
-                catch (Exception ex)
-                {
-                    if (_taskResults.TryGetValue(taskItem.TaskId, out var tcs))
-                    {
-                        tcs.SetException(ex);
-                        _taskResults.TryRemove(taskItem.TaskId, out _);
-                    }
-                    
-                    TaskFailed?.Invoke(this, new TaskFailedEventArgs
-                    {
-                        TaskId = taskItem.TaskId,
-                        DeviceId = taskItem.Command.DeviceId,
-                        ErrorMessage = ex.Message,
-                        Exception = ex,
-                        Timestamp = DateTime.Now
-                    });
-                }
-                finally
-                {
-                    _semaphore.Release();
-                }
-            }, cancellationToken);
+                    CommandId = taskItem.TaskId,
+                    Success = false,
+                    ErrorMessage = ex.Message
+                });
+            }
+
+            TaskFailed?.Invoke(this, new TaskFailedEventArgs
+            {
+                TaskId = taskItem.TaskId,
+                DeviceId = taskItem.Command.DeviceId,
+                ErrorMessage = ex.Message,
+                Exception = ex,
+                Timestamp = DateTime.Now
+            });
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _runningTaskCount);
+            _workerSemaphore.Release();
         }
     }
 
     private async Task<CommandResult> ExecuteTaskAsync(TaskItem taskItem, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
-        
+
         try
         {
-            await Task.Delay(100, cancellationToken);
-            
-            return new CommandResult
-            {
-                CommandId = taskItem.TaskId,
-                Success = true,
-                ElapsedTime = stopwatch.Elapsed
-            };
+            var device = await ResolveDeviceAsync(taskItem.Command.DeviceId, cancellationToken).ConfigureAwait(false);
+            var result = await _commandExecutor.ExecuteAsync(taskItem.Command, device, cancellationToken).ConfigureAwait(false);
+            result.CommandId = taskItem.TaskId;
+            result.ElapsedTime = stopwatch.Elapsed;
+            return result;
         }
         catch (Exception ex)
         {
@@ -222,7 +230,18 @@ public class TaskScheduler : ITaskScheduler
         }
     }
 
-    private class TaskItem
+    private async Task<DeviceInfo> ResolveDeviceAsync(string deviceId, CancellationToken cancellationToken)
+    {
+        var device = await _deviceManager.GetDeviceAsync(deviceId).ConfigureAwait(false);
+        if (device == null)
+        {
+            throw new InvalidOperationException($"Device {deviceId} was not found.");
+        }
+
+        return device;
+    }
+
+    private sealed class TaskItem
     {
         public string TaskId { get; set; } = string.Empty;
         public DeviceCommand Command { get; set; } = new();

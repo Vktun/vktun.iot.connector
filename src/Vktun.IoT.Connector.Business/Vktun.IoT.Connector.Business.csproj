@@ -10,6 +10,7 @@
     <ProjectReference Include="..\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />
     <ProjectReference Include="..\Vktun.IoT.Connector.Concurrency\Vktun.IoT.Connector.Concurrency.csproj" />
     <ProjectReference Include="..\Vktun.IoT.Connector.Communication\Vktun.IoT.Connector.Communication.csproj" />
+    <ProjectReference Include="..\Vktun.IoT.Connector.Serial\Vktun.IoT.Connector.Serial.csproj" />
     <ProjectReference Include="..\Vktun.IoT.Connector.Protocol\Vktun.IoT.Connector.Protocol.csproj" />
     <ProjectReference Include="..\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />
   </ItemGroup>

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Vktun.IoT.Connector.Core.Enums;
 
 namespace Vktun.IoT.Connector.Core.Models;
@@ -8,9 +10,36 @@ public class ProtocolConfig
     public string ProtocolName { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public ProtocolType ProtocolType { get; set; }
+    public string ProtocolVersion { get; set; } = "1.0.0";
     public string ChannelId { get; set; } = string.Empty;
+    public string Vendor { get; set; } = string.Empty;
+    public string DeviceModel { get; set; } = string.Empty;
+    public string TemplateSource { get; set; } = string.Empty;
+    public string DefinitionJson { get; set; } = string.Empty;
     public Dictionary<string, string> ParseRules { get; set; } = new();
     public List<PointConfig> Points { get; set; } = new();
+
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    public T? GetDefinition<T>()
+    {
+        if (!string.IsNullOrWhiteSpace(DefinitionJson))
+        {
+            return JsonSerializer.Deserialize<T>(DefinitionJson, SerializerOptions);
+        }
+
+        return default;
+    }
+
+    public void SetDefinition<T>(T definition)
+    {
+        DefinitionJson = JsonSerializer.Serialize(definition, SerializerOptions);
+    }
 }
 
 public class PointConfig

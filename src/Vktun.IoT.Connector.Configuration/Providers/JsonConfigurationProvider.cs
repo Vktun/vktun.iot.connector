@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
 
@@ -9,10 +10,10 @@ public class JsonConfigurationProvider : IConfigurationProvider
 {
     private readonly ILogger _logger;
     private readonly string _configFilePath;
-    private SdkConfig _config;
     private readonly object _lockObject = new();
+    private SdkConfig _config;
 
-    private static readonly JsonSerializerOptions _jsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         WriteIndented = true,
@@ -25,9 +26,7 @@ public class JsonConfigurationProvider : IConfigurationProvider
     {
         _logger = logger;
         _configFilePath = configFilePath;
-        _config = new SdkConfig();
-        
-        LoadDefaultConfig();
+        _config = BuildDefaultConfig();
     }
 
     public SdkConfig GetConfig()
@@ -44,36 +43,35 @@ public class JsonConfigurationProvider : IConfigurationProvider
         {
             if (!File.Exists(filePath))
             {
-                _logger.Warning($"配置文件不存在: {filePath}, 使用默认配置");
+                _logger.Warning($"Configuration file does not exist: {filePath}. Using defaults.");
                 return _config;
             }
 
-            var json = await File.ReadAllTextAsync(filePath);
-            var config = JsonSerializer.Deserialize<SdkConfig>(json, _jsonOptions);
-            
-            if (config != null)
+            var json = await File.ReadAllTextAsync(filePath).ConfigureAwait(false);
+            var config = JsonSerializer.Deserialize<SdkConfig>(json, JsonOptions);
+            if (config == null)
             {
-                lock (_lockObject)
-                {
-                    var oldConfig = _config;
-                    _config = config;
-                    
-                    ConfigChanged?.Invoke(this, new ConfigChangedEventArgs
-                    {
-                        OldConfig = oldConfig,
-                        NewConfig = config,
-                        Timestamp = DateTime.Now
-                    });
-                }
-                
-                _logger.Info($"配置加载成功: {filePath}");
+                return _config;
             }
-            
+
+            lock (_lockObject)
+            {
+                var oldConfig = _config;
+                _config = config;
+                ConfigChanged?.Invoke(this, new ConfigChangedEventArgs
+                {
+                    OldConfig = oldConfig,
+                    NewConfig = config,
+                    Timestamp = DateTime.Now
+                });
+            }
+
+            _logger.Info($"Configuration loaded from {filePath}");
             return _config;
         }
         catch (Exception ex)
         {
-            _logger.Error($"配置加载失败: {ex.Message}", ex);
+            _logger.Error($"Failed to load configuration: {ex.Message}", ex);
             return _config;
         }
     }
@@ -82,14 +80,13 @@ public class JsonConfigurationProvider : IConfigurationProvider
     {
         try
         {
-            var json = JsonSerializer.Serialize(config, _jsonOptions);
-            await File.WriteAllTextAsync(filePath, json);
-            
-            _logger.Info($"配置保存成功: {filePath}");
+            var json = JsonSerializer.Serialize(config, JsonOptions);
+            await File.WriteAllTextAsync(filePath, json).ConfigureAwait(false);
+            _logger.Info($"Configuration saved to {filePath}");
         }
         catch (Exception ex)
         {
-            _logger.Error($"配置保存失败: {ex.Message}", ex);
+            _logger.Error($"Failed to save configuration: {ex.Message}", ex);
         }
     }
 
@@ -99,24 +96,23 @@ public class JsonConfigurationProvider : IConfigurationProvider
         {
             lock (_lockObject)
             {
-                var oldConfig = JsonSerializer.Deserialize<SdkConfig>(
-                    JsonSerializer.Serialize(_config, _jsonOptions), _jsonOptions);
-                
+                var oldConfig = JsonSerializer.Deserialize<SdkConfig>(JsonSerializer.Serialize(_config, JsonOptions), JsonOptions)
+                    ?? new SdkConfig();
+
                 updateAction(_config);
-                
                 ConfigChanged?.Invoke(this, new ConfigChangedEventArgs
                 {
-                    OldConfig = oldConfig ?? new SdkConfig(),
+                    OldConfig = oldConfig,
                     NewConfig = _config,
                     Timestamp = DateTime.Now
                 });
             }
-            
+
             return Task.FromResult(true);
         }
         catch (Exception ex)
         {
-            _logger.Error($"配置更新失败: {ex.Message}", ex);
+            _logger.Error($"Failed to update configuration: {ex.Message}", ex);
             return Task.FromResult(false);
         }
     }
@@ -127,17 +123,15 @@ public class JsonConfigurationProvider : IConfigurationProvider
         {
             if (!Directory.Exists(templatesDirectory))
             {
-                _logger.Warning($"协议模板目录不存在: {templatesDirectory}");
+                _logger.Warning($"Protocol template directory does not exist: {templatesDirectory}");
                 return Task.FromResult(new List<string>());
             }
 
-            var jsonFiles = Directory.GetFiles(templatesDirectory, "*.json", SearchOption.AllDirectories).ToList();
-            _logger.Info($"发现 {jsonFiles.Count} 个协议模板文件");
-            return Task.FromResult(jsonFiles);
+            return Task.FromResult(Directory.GetFiles(templatesDirectory, "*.json", SearchOption.AllDirectories).ToList());
         }
         catch (Exception ex)
         {
-            _logger.Error($"获取协议模板路径失败: {ex.Message}", ex);
+            _logger.Error($"Failed to enumerate protocol templates: {ex.Message}", ex);
             return Task.FromResult(new List<string>());
         }
     }
@@ -148,23 +142,22 @@ public class JsonConfigurationProvider : IConfigurationProvider
         {
             if (!File.Exists(filePath))
             {
-                _logger.Warning($"协议模板文件不存在: {filePath}");
+                _logger.Warning($"Protocol template file does not exist: {filePath}");
                 return null;
             }
 
-            var json = await File.ReadAllTextAsync(filePath);
-            var config = JsonSerializer.Deserialize<ProtocolConfig>(json, _jsonOptions);
-            
+            var json = await File.ReadAllTextAsync(filePath).ConfigureAwait(false);
+            var config = BuildProtocolConfig(json, filePath);
             if (config != null)
             {
-                _logger.Info($"协议模板加载成功: {filePath}");
+                _logger.Info($"Protocol template loaded from {filePath}");
             }
-            
+
             return config;
         }
         catch (Exception ex)
         {
-            _logger.Error($"协议模板加载失败: {filePath}, 错误: {ex.Message}", ex);
+            _logger.Error($"Failed to load protocol template {filePath}: {ex.Message}", ex);
             return null;
         }
     }
@@ -172,27 +165,16 @@ public class JsonConfigurationProvider : IConfigurationProvider
     public async Task<List<ProtocolConfig>> LoadProtocolTemplatesAsync(string templatesDirectory)
     {
         var result = new List<ProtocolConfig>();
-        
-        try
+        var paths = await GetProtocolTemplatePathsAsync(templatesDirectory).ConfigureAwait(false);
+        foreach (var path in paths)
         {
-            var templatePaths = await GetProtocolTemplatePathsAsync(templatesDirectory);
-            
-            foreach (var path in templatePaths)
+            var config = await LoadProtocolTemplateAsync(path).ConfigureAwait(false);
+            if (config != null)
             {
-                var config = await LoadProtocolTemplateAsync(path);
-                if (config != null)
-                {
-                    result.Add(config);
-                }
+                result.Add(config);
             }
-            
-            _logger.Info($"成功加载 {result.Count} 个协议模板");
         }
-        catch (Exception ex)
-        {
-            _logger.Error($"批量加载协议模板失败: {ex.Message}", ex);
-        }
-        
+
         return result;
     }
 
@@ -201,25 +183,163 @@ public class JsonConfigurationProvider : IConfigurationProvider
         try
         {
             var directory = Path.GetDirectoryName(filePath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
             {
                 Directory.CreateDirectory(directory);
             }
 
-            var json = JsonSerializer.Serialize(config, _jsonOptions);
-            await File.WriteAllTextAsync(filePath, json);
-            
-            _logger.Info($"协议模板保存成功: {filePath}");
+            var json = BuildProtocolJson(config);
+            await File.WriteAllTextAsync(filePath, json).ConfigureAwait(false);
+            _logger.Info($"Protocol template saved to {filePath}");
         }
         catch (Exception ex)
         {
-            _logger.Error($"协议模板保存失败: {filePath}, 错误: {ex.Message}", ex);
+            _logger.Error($"Failed to save protocol template {filePath}: {ex.Message}", ex);
         }
     }
 
-    private void LoadDefaultConfig()
+    private static string BuildProtocolJson(ProtocolConfig config)
     {
-        _config = new SdkConfig
+        if (!string.IsNullOrWhiteSpace(config.DefinitionJson))
+        {
+            var definition = JsonSerializer.Deserialize<object>(config.DefinitionJson, JsonOptions);
+            return JsonSerializer.Serialize(definition, JsonOptions);
+        }
+
+        return JsonSerializer.Serialize(config, JsonOptions);
+    }
+
+    private static ProtocolConfig? BuildProtocolConfig(string json, string filePath)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        var protocolType = ResolveProtocolType(root, filePath);
+        if (protocolType == null)
+        {
+            return null;
+        }
+
+        var config = new ProtocolConfig
+        {
+            ProtocolId = ReadString(root, "ProtocolId") ?? Path.GetFileNameWithoutExtension(filePath),
+            ProtocolName = ReadString(root, "ProtocolName") ?? Path.GetFileNameWithoutExtension(filePath),
+            Description = ReadString(root, "Description") ?? string.Empty,
+            ProtocolType = protocolType.Value,
+            ProtocolVersion = ReadString(root, "ProtocolVersion") ?? "1.0.0",
+            Vendor = ReadString(root, "Vendor") ?? string.Empty,
+            DeviceModel = ReadString(root, "DeviceModel") ?? string.Empty,
+            TemplateSource = filePath,
+            DefinitionJson = json
+        };
+
+        ApplyLegacyParseRules(config);
+        return config;
+    }
+
+    private static void ApplyLegacyParseRules(ProtocolConfig config)
+    {
+        switch (config.ProtocolType)
+        {
+            case ProtocolType.Custom:
+                config.ParseRules["CustomProtocolJson"] = config.DefinitionJson;
+                break;
+            case ProtocolType.ModbusRtu:
+            case ProtocolType.ModbusTcp:
+                config.ParseRules["ModbusConfig"] = config.DefinitionJson;
+                break;
+            case ProtocolType.S7:
+                ApplyS7ParseRules(config);
+                break;
+            case ProtocolType.IEC104:
+                ApplyIec104ParseRules(config);
+                break;
+        }
+    }
+
+    private static void ApplyS7ParseRules(ProtocolConfig config)
+    {
+        var definition = config.GetDefinition<S7Config>();
+        if (definition == null)
+        {
+            return;
+        }
+
+        config.ParseRules["CpuType"] = definition.CpuType.ToString();
+        config.ParseRules["Rack"] = definition.Rack.ToString();
+        config.ParseRules["Slot"] = definition.Slot.ToString();
+        config.ParseRules["Port"] = definition.Port.ToString();
+        config.ParseRules["PduSize"] = definition.PduSize.ToString();
+        config.ParseRules["Points"] = JsonSerializer.Serialize(definition.Points, JsonOptions);
+    }
+
+    private static void ApplyIec104ParseRules(ProtocolConfig config)
+    {
+        var definition = config.GetDefinition<IEC104Config>();
+        if (definition == null)
+        {
+            return;
+        }
+
+        config.ParseRules["CommonAddress"] = definition.CommonAddress.ToString();
+        config.ParseRules["Port"] = definition.Port.ToString();
+        config.ParseRules["Points"] = JsonSerializer.Serialize(definition.Points, JsonOptions);
+    }
+
+    private static ProtocolType? ResolveProtocolType(JsonElement root, string filePath)
+    {
+        if (TryReadString(root, "ProtocolType", out var protocolTypeText) &&
+            Enum.TryParse<ProtocolType>(protocolTypeText, true, out var protocolType))
+        {
+            return protocolType;
+        }
+
+        if (TryReadString(root, "ModbusType", out var modbusType))
+        {
+            return modbusType.Equals("Tcp", StringComparison.OrdinalIgnoreCase)
+                ? ProtocolType.ModbusTcp
+                : ProtocolType.ModbusRtu;
+        }
+
+        if (root.TryGetProperty("FrameType", out _))
+        {
+            return ProtocolType.Custom;
+        }
+
+        var fileName = Path.GetFileNameWithoutExtension(filePath);
+        if (fileName.Contains("S7", StringComparison.OrdinalIgnoreCase))
+        {
+            return ProtocolType.S7;
+        }
+
+        if (fileName.Contains("104", StringComparison.OrdinalIgnoreCase))
+        {
+            return ProtocolType.IEC104;
+        }
+
+        return null;
+    }
+
+    private static string? ReadString(JsonElement root, string propertyName)
+    {
+        return TryReadString(root, propertyName, out var value) ? value : null;
+    }
+
+    private static bool TryReadString(JsonElement root, string propertyName, out string value)
+    {
+        if (root.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String)
+        {
+            value = property.GetString() ?? string.Empty;
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
+    }
+
+    private static SdkConfig BuildDefaultConfig()
+    {
+        return new SdkConfig
         {
             Global = new GlobalConfig
             {

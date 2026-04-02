@@ -1,33 +1,20 @@
 using System.Collections.Concurrent;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
-using Vktun.IoT.Connector.Core.Models;
 using Vktun.IoT.Connector.Protocol.Parsers;
 
 namespace Vktun.IoT.Connector.Protocol.Factories;
 
 public class ProtocolParserFactory : IProtocolParserFactory
 {
-    private readonly ConcurrentDictionary<ProtocolType, IProtocolParser> _parsers;
-    private readonly ConcurrentDictionary<string, IProtocolParser> _protocolParsers;
+    private readonly ConcurrentDictionary<ProtocolType, IProtocolParser> _parsers = new();
+    private readonly ConcurrentDictionary<string, IProtocolParser> _protocolParsers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger _logger;
 
     public ProtocolParserFactory(ILogger logger)
     {
-        _parsers = new ConcurrentDictionary<ProtocolType, IProtocolParser>();
-        _protocolParsers = new ConcurrentDictionary<string, IProtocolParser>();
         _logger = logger;
-        
         RegisterDefaultParsers();
-    }
-
-    private void RegisterDefaultParsers()
-    {
-        RegisterParser(new CustomProtocolParser(_logger));
-        RegisterParser(new ModbusRtuParser(_logger));
-        RegisterParser(new ModbusTcpParser(_logger));
-        RegisterParser(new S7ProtocolParser(_logger));
-        RegisterParser(new IEC104ProtocolParser(_logger));
     }
 
     public IProtocolParser? GetParser(ProtocolType type)
@@ -37,23 +24,54 @@ public class ProtocolParserFactory : IProtocolParserFactory
 
     public IProtocolParser? GetParser(string protocolId)
     {
-        return _protocolParsers.TryGetValue(protocolId, out var parser) ? parser : null;
+        if (_protocolParsers.TryGetValue(protocolId, out var parser))
+        {
+            return parser;
+        }
+
+        return Enum.TryParse<ProtocolType>(protocolId, true, out var protocolType)
+            ? GetParser(protocolType)
+            : null;
     }
 
     public void RegisterParser(IProtocolParser parser)
     {
         _parsers[parser.Type] = parser;
-        _logger.Info($"注册协议解析器: {parser.Name}, 类型: {parser.Type}");
+        _protocolParsers[parser.Type.ToString()] = parser;
+        _protocolParsers[parser.Name] = parser;
+        _logger.Info($"Registered protocol parser {parser.Name}, type: {parser.Type}");
+    }
+
+    public void RegisterParser(string protocolId, IProtocolParser parser)
+    {
+        RegisterParser(parser);
+        _protocolParsers[protocolId] = parser;
     }
 
     public void UnregisterParser(ProtocolType type)
     {
         _parsers.TryRemove(type, out _);
-        _logger.Info($"注销协议解析器: {type}");
+        _protocolParsers.TryRemove(type.ToString(), out _);
+        _logger.Info($"Unregistered protocol parser {type}");
+    }
+
+    public void UnregisterParser(string protocolId)
+    {
+        _protocolParsers.TryRemove(protocolId, out _);
+        _logger.Info($"Unregistered protocol parser {protocolId}");
     }
 
     public IEnumerable<ProtocolType> GetSupportedProtocols()
     {
         return _parsers.Keys;
+    }
+
+    private void RegisterDefaultParsers()
+    {
+        RegisterParser(new CustomProtocolParser(_logger));
+        RegisterParser(new ModbusRtuParser(_logger));
+        RegisterParser(new ModbusTcpParser(_logger));
+        RegisterParser(new S7ProtocolParser(_logger));
+        RegisterParser(new IEC104ProtocolParser(_logger));
     }
 }

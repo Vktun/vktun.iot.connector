@@ -20,6 +20,8 @@ public interface IProtocolParserFactory
     IProtocolParser? GetParser(ProtocolType type);
     IProtocolParser? GetParser(string protocolId);
     void RegisterParser(IProtocolParser parser);
+    void RegisterParser(string protocolId, IProtocolParser parser);
     void UnregisterParser(ProtocolType type);
+    void UnregisterParser(string protocolId);
     IEnumerable<ProtocolType> GetSupportedProtocols();
 }

@@ -16,6 +16,8 @@ public class DeviceInfo
     public int SlaveId { get; set; }
     public ProtocolType ProtocolType { get; set; }
     public string ProtocolId { get; set; } = string.Empty;
+    public string ProtocolVersion { get; set; } = "1.0.0";
+    public string ProtocolConfigPath { get; set; } = string.Empty;
     public DeviceStatus Status { get; set; } = DeviceStatus.Offline;
     public DateTime? LastConnectTime { get; set; }
     public DateTime? LastDataTime { get; set; }
@@ -63,7 +65,9 @@ public class CommandResult
 {
     public string CommandId { get; set; } = string.Empty;
     public bool Success { get; set; }
+    public byte[]? RequestData { get; set; }
     public byte[]? ResponseData { get; set; }
+    public DeviceData? ParsedData { get; set; }
     public string? ErrorMessage { get; set; }
     public TimeSpan ElapsedTime { get; set; }
 }

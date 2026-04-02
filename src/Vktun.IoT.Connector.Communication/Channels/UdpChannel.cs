@@ -27,36 +27,34 @@ public class UdpChannel : CommunicationChannelBase
         _deviceLastActiveTimes = new ConcurrentDictionary<string, DateTime>();
     }
 
-    public override async Task<bool> OpenAsync(CancellationToken cancellationToken = default)
+    public override Task<bool> OpenAsync(CancellationToken cancellationToken = default)
     {
         if (_isConnected)
         {
-            return true;
+            return Task.FromResult(true);
         }
 
         try
         {
             _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            
+
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, System.Net.Sockets.ProtocolType.Udp);
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            
+
             var config = _configProvider.GetConfig();
             _socket.ReceiveBufferSize = config.Udp.ReceiveBufferSize;
-            
             _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
-            
+
             _isConnected = true;
-            _logger.Info($"UDP通道启动成功，端口: {_port}");
-            
+            _logger.Info($"UDP channel started on port {_port}.");
+
             _ = ReceiveLoopAsync(_cancellationTokenSource.Token);
-            
-            return true;
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
-            _logger.Error($"UDP通道启动失败: {ex.Message}", ex);
-            return false;
+            _logger.Error($"Failed to start UDP channel: {ex.Message}", ex);
+            return Task.FromResult(false);
         }
     }
 
@@ -69,15 +67,15 @@ public class UdpChannel : CommunicationChannelBase
 
         _isConnected = false;
         _cancellationTokenSource?.Cancel();
-        
+
         _socket?.Close();
         _socket?.Dispose();
         _socket = null;
-        
+
         _connections.Clear();
         _deviceLastActiveTimes.Clear();
-        
-        _logger.Info("UDP通道已关闭");
+
+        _logger.Info("UDP channel stopped.");
         return Task.CompletedTask;
     }
 
@@ -88,21 +86,21 @@ public class UdpChannel : CommunicationChannelBase
 
     public override async Task<int> SendAsync(string deviceId, ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
     {
-        if (_socket == null || !_connections.TryGetValue(deviceId, out var connection))
+        if (_socket == null || !_connections.TryGetValue(deviceId, out var connection) || connection.RemoteEndPoint == null)
         {
             return 0;
         }
 
         try
         {
-            var bytesSent = await _socket.SendToAsync(data, SocketFlags.None, connection.RemoteEndPoint!, cancellationToken);
+            var bytesSent = await _socket.SendToAsync(data, SocketFlags.None, connection.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
             connection.BytesSent += bytesSent;
             connection.LastActiveTime = DateTime.Now;
             return bytesSent;
         }
         catch (Exception ex)
         {
-            OnErrorOccurred(deviceId, "发送数据失败", ex);
+            OnErrorOccurred(deviceId, "Failed to send UDP data.", ex);
             return 0;
         }
     }
@@ -111,7 +109,7 @@ public class UdpChannel : CommunicationChannelBase
     {
         while (!cancellationToken.IsCancellationRequested && _isConnected)
         {
-            await Task.Delay(100, cancellationToken);
+            await Task.Delay(100, cancellationToken).ConfigureAwait(false);
             yield break;
         }
     }
@@ -126,10 +124,10 @@ public class UdpChannel : CommunicationChannelBase
             ConnectTime = DateTime.Now,
             LastActiveTime = DateTime.Now
         };
-        
+
         _connections[device.DeviceId] = connection;
         _deviceLastActiveTimes[device.DeviceId] = DateTime.Now;
-        
+
         OnDeviceConnected(device.DeviceId, device);
         return Task.FromResult(true);
     }
@@ -138,8 +136,8 @@ public class UdpChannel : CommunicationChannelBase
     {
         _connections.TryRemove(deviceId, out _);
         _deviceLastActiveTimes.TryRemove(deviceId, out _);
-        
-        OnDeviceDisconnected(deviceId, "主动断开");
+
+        OnDeviceDisconnected(deviceId, "Disconnected.");
         return Task.CompletedTask;
     }
 
@@ -147,37 +145,42 @@ public class UdpChannel : CommunicationChannelBase
     {
         var config = _configProvider.GetConfig();
         var buffer = new byte[config.Udp.ReceiveBufferSize];
-        var endPoint = new IPEndPoint(IPAddress.Any, 0) as EndPoint;
-        
+        EndPoint endPoint = new IPEndPoint(IPAddress.Any, 0);
+
         while (!cancellationToken.IsCancellationRequested && _socket != null)
         {
             try
             {
-                var bytesRead = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, endPoint, cancellationToken);
-                
-                if (bytesRead.ReceivedBytes > 0)
+                var receiveResult = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, endPoint, cancellationToken).ConfigureAwait(false);
+
+                if (receiveResult.ReceivedBytes <= 0)
                 {
-                    var remoteEndPoint = bytesRead.RemoteEndPoint as IPEndPoint;
-                    var deviceId = remoteEndPoint?.ToString() ?? Guid.NewGuid().ToString();
-                    
-                    var data = new byte[bytesRead.ReceivedBytes];
-                    Buffer.BlockCopy(buffer, 0, data, 0, bytesRead.ReceivedBytes);
-                    
-                    if (!_connections.ContainsKey(deviceId))
-                    {
-                        var connection = new DeviceConnection
-                        {
-                            DeviceId = deviceId,
-                            RemoteEndPoint = remoteEndPoint,
-                            ConnectTime = DateTime.Now,
-                            LastActiveTime = DateTime.Now
-                        };
-                        _connections[deviceId] = connection;
-                    }
-                    
-                    _deviceLastActiveTimes[deviceId] = DateTime.Now;
-                    OnDataReceived(deviceId, data);
+                    continue;
                 }
+
+                var remoteEndPoint = receiveResult.RemoteEndPoint as IPEndPoint;
+                var deviceId = ResolveDeviceId(remoteEndPoint);
+
+                var data = new byte[receiveResult.ReceivedBytes];
+                Buffer.BlockCopy(buffer, 0, data, 0, receiveResult.ReceivedBytes);
+
+                if (!_connections.TryGetValue(deviceId, out var connection))
+                {
+                    connection = new DeviceConnection
+                    {
+                        DeviceId = deviceId,
+                        RemoteEndPoint = remoteEndPoint,
+                        ConnectTime = DateTime.Now,
+                        LastActiveTime = DateTime.Now
+                    };
+                    _connections[deviceId] = connection;
+                }
+
+                connection.BytesReceived += receiveResult.ReceivedBytes;
+                connection.LastActiveTime = DateTime.Now;
+                _deviceLastActiveTimes[deviceId] = DateTime.Now;
+
+                OnDataReceived(deviceId, data);
             }
             catch (OperationCanceledException)
             {
@@ -185,8 +188,28 @@ public class UdpChannel : CommunicationChannelBase
             }
             catch (Exception ex)
             {
-                _logger.Error($"UDP接收数据异常: {ex.Message}", ex);
+                _logger.Error($"Failed to receive UDP data: {ex.Message}", ex);
             }
         }
+    }
+
+    private string ResolveDeviceId(IPEndPoint? remoteEndPoint)
+    {
+        if (remoteEndPoint == null)
+        {
+            return Guid.NewGuid().ToString("N");
+        }
+
+        foreach (var pair in _connections)
+        {
+            if (pair.Value.RemoteEndPoint is IPEndPoint knownEndPoint &&
+                Equals(knownEndPoint.Address, remoteEndPoint.Address) &&
+                knownEndPoint.Port == remoteEndPoint.Port)
+            {
+                return pair.Key;
+            }
+        }
+
+        return remoteEndPoint.ToString();
     }
 }
