@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CANopen Device Template",
+  "description": "CANopen工业总线设备配置模板",
+  "protocolId": "canopen-v1",
+  "protocolName": "CANopen",
+  "protocolType": "Custom",
+  "protocolVersion": "1.0.0",
+  "vendor": "Generic",
+  "deviceModel": "CANopen-Slave",
+  "additionalSettings": {
+    "NodeId": 1,
+    "BaudRate": 250000,
+    "HeartbeatTimeout": 1000,
+    "SyncWindowLength": 100000,
+    "EnableSync": true,
+    "SyncPeriod": 100,
+    "MaxPdoCount": 4,
+    "BaudRates": [10000, 20000, 50000, 100000, 125000, 250000, 500000, 800000, 1000000]
+  },
+  "points": [
+    {
+      "pointName": "1000:0",
+      "displayName": "Device Type",
+      "dataType": "UInt32",
+      "unit": "",
+      "index": "1000",
+      "subIndex": 0,
+      "accessType": "ReadOnly",
+      "description": "设备类型标识"
+    },
+    {
+      "pointName": "1008:0",
+      "displayName": "Device Name",
+      "dataType": "Ascii",
+      "unit": "",
+      "index": "1008",
+      "subIndex": 0,
+      "accessType": "ReadOnly",
+      "description": "制造商设备名称"
+    },
+    {
+      "pointName": "1017:0",
+      "displayName": "Producer Heartbeat Time",
+      "dataType": "UInt16",
+      "unit": "ms",
+      "index": "1017",
+      "subIndex": 0,
+      "accessType": "ReadWrite",
+      "defaultValue": 1000,
+      "minValue": 0,
+      "maxValue": 65535,
+      "description": "心跳生产周期"
+    },
+    {
+      "pointName": "6100:1",
+      "displayName": "Digital Input 1",
+      "dataType": "Bool",
+      "unit": "",
+      "index": "6100",
+      "subIndex": 1,
+      "accessType": "ReadOnly",
+      "pdoMapping": "TPDO1",
+      "description": "数字输入通道1"
+    },
+    {
+      "pointName": "6100:2",
+      "displayName": "Digital Input 2",
+      "dataType": "Bool",
+      "unit": "",
+      "index": "6100",
+      "subIndex": 2,
+      "accessType": "ReadOnly",
+      "pdoMapping": "TPDO1",
+      "description": "数字输入通道2"
+    },
+    {
+      "pointName": "6200:1",
+      "displayName": "Digital Output 1",
+      "dataType": "Bool",
+      "unit": "",
+      "index": "6200",
+      "subIndex": 1,
+      "accessType": "ReadWrite",
+      "pdoMapping": "RPDO1",
+      "description": "数字输出通道1"
+    },
+    {
+      "pointName": "6401:1",
+      "displayName": "Analog Input 1",
+      "dataType": "Int16",
+      "unit": "",
+      "index": "6401",
+      "subIndex": 1,
+      "accessType": "ReadOnly",
+      "pdoMapping": "TPDO2",
+      "minValue": -32768,
+      "maxValue": 32767,
+      "description": "模拟输入通道1（16位）"
+    },
+    {
+      "pointName": "6411:1",
+      "displayName": "Analog Output 1",
+      "dataType": "Int16",
+      "unit": "",
+      "index": "6411",
+      "subIndex": 1,
+      "accessType": "ReadWrite",
+      "pdoMapping": "RPDO2",
+      "minValue": -32768,
+      "maxValue": 32767,
+      "description": "模拟输出通道1（16位）"
+    },
+    {
+      "pointName": "6040:0",
+      "displayName": "Control Word",
+      "dataType": "UInt16",
+      "unit": "",
+      "index": "6040",
+      "subIndex": 0,
+      "accessType": "ReadWrite",
+      "pdoMapping": "RPDO1",
+      "description": "驱动器控制字"
+    },
+    {
+      "pointName": "6041:0",
+      "displayName": "Status Word",
+      "dataType": "UInt16",
+      "unit": "",
+      "index": "6041",
+      "subIndex": 0,
+      "accessType": "ReadOnly",
+      "pdoMapping": "TPDO1",
+      "description": "驱动器状态字"
+    },
+    {
+      "pointName": "606C:0",
+      "displayName": "Velocity Actual Value",
+      "dataType": "Int32",
+      "unit": "rpm",
+      "index": "606C",
+      "subIndex": 0,
+      "accessType": "ReadOnly",
+      "pdoMapping": "TPDO2",
+      "description": "实际速度值"
+    },
+    {
+      "pointName": "60FF:0",
+      "displayName": "Target Velocity",
+      "dataType": "Int32",
+      "unit": "rpm",
+      "index": "60FF",
+      "subIndex": 0,
+      "accessType": "ReadWrite",
+      "pdoMapping": "RPDO2",
+      "minValue": -100000,
+      "maxValue": 100000,
+      "description": "目标速度设定"
+    }
+  ],
+  "parseRules": {
+    "IndexFormat": "{Index}:{SubIndex}",
+    "HexIndexFormat": true,
+    "DefaultSubIndex": 0,
+    "PdoMappingEnabled": true,
+    "SdoTimeout": 500,
+    "SegmentedTransferEnabled": true
+  },
+  "pdoConfigurations": {
+    "TPDO1": {
+      "cobId": "0x180",
+      "transmissionType": "Sync",
+      "mapping": ["6100:1", "6100:2", "6041:0"]
+    },
+    "TPDO2": {
+      "cobId": "0x280",
+      "transmissionType": "Sync",
+      "mapping": ["6401:1", "606C:0"]
+    },
+    "RPDO1": {
+      "cobId": "0x200",
+      "mapping": ["6200:1", "6040:0"]
+    },
+    "RPDO2": {
+      "cobId": "0x300",
+      "mapping": ["6411:1", "60FF:0"]
+    }
+  }
+}

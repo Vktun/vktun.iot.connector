@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OPC UA Device Template",
+  "description": "OPC UA协议设备配置模板",
+  "protocolId": "opcua-v1",
+  "protocolName": "OPC UA",
+  "protocolType": "Custom",
+  "protocolVersion": "1.0.0",
+  "vendor": "Generic",
+  "deviceModel": "OPC-UA-Server",
+  "additionalSettings": {
+    "EndpointUrl": "opc.tcp://localhost:4840",
+    "SecurityMode": "SignAndEncrypt",
+    "SecurityPolicy": "Basic256Sha256",
+    "Username": "",
+    "Password": "",
+    "PublishingInterval": 1000,
+    "SamplingInterval": 500,
+    "QueueSize": 10,
+    "EnableDataChangeNotifications": true
+  },
+  "points": [
+    {
+      "pointName": "ns=2;s=Device.Temperature",
+      "displayName": "Temperature",
+      "dataType": "Float",
+      "unit": "°C",
+      "samplingInterval": 500,
+      "subscribe": true,
+      "qualityThreshold": 192,
+      "minValue": -50,
+      "maxValue": 200,
+      "isReadOnly": true,
+      "description": "设备温度值"
+    },
+    {
+      "pointName": "ns=2;s=Device.Pressure",
+      "displayName": "Pressure",
+      "dataType": "Double",
+      "unit": "kPa",
+      "samplingInterval": 500,
+      "subscribe": true,
+      "qualityThreshold": 192,
+      "minValue": 0,
+      "maxValue": 10000,
+      "isReadOnly": true,
+      "description": "设备压力值"
+    },
+    {
+      "pointName": "ns=2;s=Device.Status",
+      "displayName": "Status",
+      "dataType": "Int32",
+      "unit": "",
+      "samplingInterval": 1000,
+      "subscribe": true,
+      "qualityThreshold": 192,
+      "isReadOnly": true,
+      "description": "设备运行状态码"
+    },
+    {
+      "pointName": "ns=2;s=Device.RunMode",
+      "displayName": "Run Mode",
+      "dataType": "Bool",
+      "unit": "",
+      "samplingInterval": 1000,
+      "subscribe": false,
+      "isReadOnly": false,
+      "description": "设备运行模式开关"
+    },
+    {
+      "pointName": "ns=2;s=Device.Setpoint",
+      "displayName": "Setpoint",
+      "dataType": "Float",
+      "unit": "°C",
+      "samplingInterval": 1000,
+      "subscribe": false,
+      "isReadOnly": false,
+      "minValue": 0,
+      "maxValue": 100,
+      "description": "目标设定值"
+    }
+  ],
+  "parseRules": {
+    "NodeIdFormat": "ns={namespace};s={identifier}",
+    "QualityMapping": "Good=192-255, Uncertain=128-191, Bad=0-127",
+    "TimestampSource": "Server"
+  }
+}

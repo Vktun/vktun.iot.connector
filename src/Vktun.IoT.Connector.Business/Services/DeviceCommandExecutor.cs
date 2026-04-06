@@ -507,7 +507,7 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
             DataType.UInt16 or DataType.Int16 => S7DataItemType.Word,
             DataType.UInt32 or DataType.Int32 => S7DataItemType.DWord,
             DataType.Float => S7DataItemType.Real,
-            DataType.bit => S7DataItemType.Bit,
+            DataType.Bit => S7DataItemType.Bit,
             _ => S7DataItemType.Word
         };
     }

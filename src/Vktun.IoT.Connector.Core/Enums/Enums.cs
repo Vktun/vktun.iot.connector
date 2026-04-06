@@ -40,6 +40,7 @@ public enum ByteOrder
 
 public enum DataType
 {
+    Bool,
     UInt8,
     Int8,
     UInt16,
@@ -53,7 +54,8 @@ public enum DataType
     Ascii,
     UnicodeString,
     Bcd,
-    bit
+    Bit,
+    DateTime
 }
 
 public enum CheckType

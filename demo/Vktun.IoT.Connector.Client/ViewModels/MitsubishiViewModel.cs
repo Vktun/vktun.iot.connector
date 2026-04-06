@@ -217,7 +217,7 @@ public class MitsubishiViewModel : BindableBase, INavigationAware
     {
         return dataType switch
         {
-            DataType.bit => bool.Parse(valueStr),
+            DataType.Bit => bool.Parse(valueStr),
             DataType.Int16 => short.Parse(valueStr),
             DataType.UInt16 => ushort.Parse(valueStr),
             DataType.Int32 => int.Parse(valueStr),

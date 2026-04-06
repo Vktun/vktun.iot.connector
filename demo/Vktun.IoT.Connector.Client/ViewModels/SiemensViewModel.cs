@@ -234,7 +234,7 @@ public class SiemensViewModel : BindableBase, INavigationAware
     {
         return dataType switch
         {
-            DataType.bit => bool.Parse(valueStr),
+            DataType.Bit => bool.Parse(valueStr),
             DataType.Int8 => sbyte.Parse(valueStr),
             DataType.UInt8 => byte.Parse(valueStr),
             DataType.Int16 => short.Parse(valueStr),

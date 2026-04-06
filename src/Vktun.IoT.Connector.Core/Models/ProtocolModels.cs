@@ -17,6 +17,7 @@ public class ProtocolConfig
     public string TemplateSource { get; set; } = string.Empty;
     public string DefinitionJson { get; set; } = string.Empty;
     public Dictionary<string, string> ParseRules { get; set; } = new();
+    public Dictionary<string, object?> AdditionalSettings { get; set; } = new();
     public List<PointConfig> Points { get; set; } = new();
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
