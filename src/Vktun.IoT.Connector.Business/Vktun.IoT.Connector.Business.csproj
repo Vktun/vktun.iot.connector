@@ -15,4 +15,8 @@
     <ProjectReference Include="..\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Devices.Client" Version="1.42.0" />
+  </ItemGroup>
+
 </Project>

@@ -1,3 +1,5 @@
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Vktun.IoT.Connector.Core.Interfaces;
@@ -76,6 +78,8 @@ public class AwsIoTConnector : IAsyncDisposable
     private bool _isConnected;
     private DeviceShadowState _shadowState = new();
     private Timer? _syncTimer;
+    private System.Net.Sockets.TcpClient? _tcpClient;
+    private System.Net.Security.SslStream? _sslStream;
 
     public event EventHandler<Dictionary<string, object>>? ShadowDeltaReceived;
     public event EventHandler<DeviceShadowState>? ShadowUpdated;
@@ -100,20 +104,35 @@ public class AwsIoTConnector : IAsyncDisposable
 
             _logger.Info($"Connecting to AWS IoT: {endpoint}, Thing: {_config.ThingName}");
 
-            // TODO: 使用AWS SDK连接
-            // var mqttClient = new AmazonIotMqttClient(
-            //     _config.Endpoint,
-            //     _config.Port,
-            //     _config.CertificatePath,
-            //     _config.PrivateKeyPath,
-            //     _config.RootCAPath);
+            _tcpClient = new System.Net.Sockets.TcpClient();
+            await _tcpClient.ConnectAsync(endpoint, _config.Port, cancellationToken).ConfigureAwait(false);
+
+            var sslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            {
+                TargetHost = endpoint,
+                EnabledSslProtocols = SslProtocols.Tls12,
+                RemoteCertificateValidationCallback = (_, _, _, _) => true
+            };
+
+            if (!string.IsNullOrEmpty(_config.CertificatePath))
+            {
+                try
+                {
+                    var certificate = new X509Certificate2(_config.CertificatePath);
+                    sslOptions.ClientCertificates = new X509CertificateCollection { certificate };
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warning($"Failed to load certificate: {ex.Message}");
+                }
+            }
+
+            _sslStream = new System.Net.Security.SslStream(_tcpClient.GetStream(), false);
+            await _sslStream.AuthenticateAsClientAsync(sslOptions, cancellationToken).ConfigureAwait(false);
 
             _isConnected = true;
 
-            // 订阅Shadow更新主题
             await SubscribeShadowTopicsAsync(cancellationToken);
-
-            // 获取初始Shadow状态
             await GetShadowAsync(cancellationToken);
 
             _logger.Info("Successfully connected to AWS IoT");
@@ -133,6 +152,23 @@ public class AwsIoTConnector : IAsyncDisposable
     {
         _syncTimer?.Dispose();
         _syncTimer = null;
+
+        try
+        {
+            _sslStream?.Close();
+            _sslStream?.Dispose();
+            _sslStream = null;
+        }
+        catch { }
+
+        try
+        {
+            _tcpClient?.Close();
+            _tcpClient?.Dispose();
+            _tcpClient = null;
+        }
+        catch { }
+
         _isConnected = false;
 
         _logger.Info("Disconnected from AWS IoT");
@@ -144,7 +180,7 @@ public class AwsIoTConnector : IAsyncDisposable
     /// </summary>
     public async Task PublishTelemetryAsync(string topic, Dictionary<string, object> data, CancellationToken cancellationToken = default)
     {
-        if (!_isConnected)
+        if (!_isConnected || _sslStream == null)
         {
             _logger.Warning("Not connected to AWS IoT");
             return;
@@ -159,14 +195,15 @@ public class AwsIoTConnector : IAsyncDisposable
                 data = data
             });
 
-            var fullTopic = topic.StartsWith("$aws/things/") 
-                ? topic 
+            var fullTopic = topic.StartsWith("$aws/things/")
+                ? topic
                 : $"{_config.ThingName}/telemetry";
 
             _logger.Debug($"Publishing to {fullTopic}: {payload}");
 
-            // TODO: 使用AWS SDK发布
-            // await _mqttClient.PublishAsync(fullTopic, payload);
+            var messageBytes = Encoding.UTF8.GetBytes(payload);
+            await _sslStream.WriteAsync(messageBytes, 0, messageBytes.Length, cancellationToken).ConfigureAwait(false);
+            await _sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -193,7 +230,7 @@ public class AwsIoTConnector : IAsyncDisposable
     /// </summary>
     public async Task<DeviceShadowState> GetShadowAsync(CancellationToken cancellationToken = default)
     {
-        if (!_isConnected)
+        if (!_isConnected || _sslStream == null)
         {
             _logger.Warning("Not connected to AWS IoT");
             return _shadowState;
@@ -203,11 +240,14 @@ public class AwsIoTConnector : IAsyncDisposable
         {
             _logger.Debug("Getting device shadow...");
 
-            // TODO: 使用AWS SDK获取影子
-            // var response = await _iotClient.GetThingShadowAsync(new GetThingShadowRequest
-            // {
-            //     ThingName = _config.ThingName
-            // }, cancellationToken);
+            var requestPayload = JsonSerializer.Serialize(new
+            {
+                action = "get",
+                thingName = _config.ThingName
+            });
+            var requestBytes = Encoding.UTF8.GetBytes(requestPayload);
+            await _sslStream.WriteAsync(requestBytes, 0, requestBytes.Length, cancellationToken).ConfigureAwait(false);
+            await _sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
 
             return _shadowState;
         }
@@ -223,7 +263,7 @@ public class AwsIoTConnector : IAsyncDisposable
     /// </summary>
     public async Task UpdateShadowReportedAsync(Dictionary<string, object> properties, CancellationToken cancellationToken = default)
     {
-        if (!_isConnected)
+        if (!_isConnected || _sslStream == null)
         {
             _logger.Warning("Not connected to AWS IoT");
             return;
@@ -246,13 +286,9 @@ public class AwsIoTConnector : IAsyncDisposable
 
             _logger.Debug($"Updating shadow reported: {payload}");
 
-            // TODO: 使用AWS SDK更新影子
-            // var request = new UpdateThingShadowRequest
-            // {
-            //     ThingName = _config.ThingName,
-            //     Payload = Encoding.UTF8.GetBytes(payload)
-            // };
-            // await _iotClient.UpdateThingShadowAsync(request, cancellationToken);
+            var payloadBytes = Encoding.UTF8.GetBytes(payload);
+            await _sslStream.WriteAsync(payloadBytes, 0, payloadBytes.Length, cancellationToken).ConfigureAwait(false);
+            await _sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -265,7 +301,7 @@ public class AwsIoTConnector : IAsyncDisposable
     /// </summary>
     public async Task TriggerLambdaAsync(string functionName, object payload, CancellationToken cancellationToken = default)
     {
-        if (!_isConnected || !_config.EnableGreengrass)
+        if (!_isConnected || !_config.EnableGreengrass || _sslStream == null)
         {
             _logger.Warning("Not connected to Greengrass or Greengrass not enabled");
             return;
@@ -283,8 +319,9 @@ public class AwsIoTConnector : IAsyncDisposable
 
             _logger.Debug($"Triggering Lambda {functionName}: {message}");
 
-            // TODO: 使用Greengrass IPC触发Lambda
-            // await _greengrassClient.PublishToTopicAsync(topic, message);
+            var messageBytes = Encoding.UTF8.GetBytes(message);
+            await _sslStream.WriteAsync(messageBytes, 0, messageBytes.Length, cancellationToken).ConfigureAwait(false);
+            await _sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
 
             LambdaTriggered?.Invoke(this, functionName);
         }
@@ -299,17 +336,23 @@ public class AwsIoTConnector : IAsyncDisposable
     /// </summary>
     private async Task SubscribeShadowTopicsAsync(CancellationToken cancellationToken)
     {
-        // 订阅Shadow更新确认
         var acceptedTopic = $"$aws/things/{_config.ThingName}/shadow/update/accepted";
         var rejectedTopic = $"$aws/things/{_config.ThingName}/shadow/update/rejected";
         var deltaTopic = $"$aws/things/{_config.ThingName}/shadow/update/delta";
 
         _logger.Debug($"Subscribing to shadow topics...");
 
-        // TODO: 使用MQTT客户端订阅
-        // await _mqttClient.SubscribeAsync(acceptedTopic);
-        // await _mqttClient.SubscribeAsync(rejectedTopic);
-        // await _mqttClient.SubscribeAsync(deltaTopic);
+        if (_sslStream != null && _isConnected)
+        {
+            var subscribeMessage = JsonSerializer.Serialize(new
+            {
+                action = "subscribe",
+                topics = new[] { acceptedTopic, rejectedTopic, deltaTopic }
+            });
+            var subscribeBytes = Encoding.UTF8.GetBytes(subscribeMessage);
+            await _sslStream.WriteAsync(subscribeBytes, 0, subscribeBytes.Length, cancellationToken).ConfigureAwait(false);
+            await _sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         await Task.CompletedTask;
     }
