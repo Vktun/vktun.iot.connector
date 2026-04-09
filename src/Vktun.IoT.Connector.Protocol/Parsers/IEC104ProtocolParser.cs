@@ -9,8 +9,8 @@ namespace Vktun.IoT.Connector.Protocol.Parsers;
 public class IEC104ProtocolParser : IProtocolParser
 {
     private readonly ILogger _logger;
-    private ushort _sendSeqNumber;
-    private ushort _receiveSeqNumber;
+    private int _sendSeqNumber;
+    private int _receiveSeqNumber;
 
     public ProtocolType Type => ProtocolType.IEC104;
     public string Name => "IEC104电力协议解析器";
@@ -182,14 +182,16 @@ public class IEC104ProtocolParser : IProtocolParser
     private byte[] BuildApdu(byte[]? asduData = null)
     {
         var apduLength = asduData != null ? (byte)(4 + asduData.Length) : (byte)4;
+        var sendSeq = (ushort)Interlocked.Increment(ref _sendSeqNumber);
+        var receiveSeq = (ushort)_receiveSeqNumber;
         var apdu = new List<byte>
         {
             0x68,
             apduLength,
-            (byte)((_sendSeqNumber << 1) & 0xFE),
-            (byte)((_sendSeqNumber >> 7) & 0xFF),
-            (byte)((_receiveSeqNumber << 1) & 0xFE),
-            (byte)((_receiveSeqNumber >> 7) & 0xFF)
+            (byte)((sendSeq << 1) & 0xFE),
+            (byte)((sendSeq >> 7) & 0xFF),
+            (byte)((receiveSeq << 1) & 0xFE),
+            (byte)((receiveSeq >> 7) & 0xFF)
         };
 
         if (asduData != null)
@@ -197,7 +199,6 @@ public class IEC104ProtocolParser : IProtocolParser
             apdu.AddRange(asduData);
         }
 
-        _sendSeqNumber++;
         return apdu.ToArray();
     }
 

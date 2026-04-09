@@ -56,6 +56,22 @@ public class AwsIoTConfig
     /// Greengrass核心端点
     /// </summary>
     public string? GreengrassCoreEndpoint { get; set; }
+
+    /// <summary>
+    /// 是否启用严格的证书验证
+    /// </summary>
+    public bool EnableStrictCertificateValidation { get; set; } = true;
+
+    /// <summary>
+    /// 预期的证书颁发者名称（可选，用于验证服务器证书）
+    /// AWS IoT CA示例: "Amazon Web Services"
+    /// </summary>
+    public string? ExpectedCertificateIssuer { get; set; }
+
+    /// <summary>
+    /// 是否验证证书主题名称与端点匹配
+    /// </summary>
+    public bool ValidateCertificateSubject { get; set; } = true;
 }
 
 /// <summary>
@@ -80,6 +96,7 @@ public class AwsIoTConnector : IAsyncDisposable
     private Timer? _syncTimer;
     private System.Net.Sockets.TcpClient? _tcpClient;
     private System.Net.Security.SslStream? _sslStream;
+    private string _currentEndpoint = string.Empty;
 
     public event EventHandler<Dictionary<string, object>>? ShadowDeltaReceived;
     public event EventHandler<DeviceShadowState>? ShadowUpdated;
@@ -102,6 +119,7 @@ public class AwsIoTConnector : IAsyncDisposable
                 ? _config.GreengrassCoreEndpoint
                 : _config.Endpoint;
 
+            _currentEndpoint = endpoint;
             _logger.Info($"Connecting to AWS IoT: {endpoint}, Thing: {_config.ThingName}");
 
             _tcpClient = new System.Net.Sockets.TcpClient();
@@ -111,7 +129,7 @@ public class AwsIoTConnector : IAsyncDisposable
             {
                 TargetHost = endpoint,
                 EnabledSslProtocols = SslProtocols.Tls12,
-                RemoteCertificateValidationCallback = (_, _, _, _) => true
+                RemoteCertificateValidationCallback = ValidateServerCertificate
             };
 
             if (!string.IsNullOrEmpty(_config.CertificatePath))
@@ -159,7 +177,10 @@ public class AwsIoTConnector : IAsyncDisposable
             _sslStream?.Dispose();
             _sslStream = null;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Error closing SSL stream: {ex.Message}");
+        }
 
         try
         {
@@ -167,7 +188,10 @@ public class AwsIoTConnector : IAsyncDisposable
             _tcpClient?.Dispose();
             _tcpClient = null;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _logger.Warning($"Error closing TCP client: {ex.Message}");
+        }
 
         _isConnected = false;
 
@@ -396,5 +420,149 @@ public class AwsIoTConnector : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await DisconnectAsync();
+    }
+
+    private bool ValidateServerCertificate(object sender, X509Certificate? certificate, X509Chain? chain, System.Net.Security.SslPolicyErrors sslPolicyErrors)
+    {
+        if (certificate == null)
+        {
+            _logger.Error("Server certificate is null");
+            return false;
+        }
+
+        if (sslPolicyErrors == System.Net.Security.SslPolicyErrors.None)
+        {
+            return ValidateCertificateDetails(certificate, chain);
+        }
+
+        if (!string.IsNullOrEmpty(_config.RootCAPath) && chain != null)
+        {
+            try
+            {
+                chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                chain.ChainPolicy.CustomTrustStore.Add(new X509Certificate2(_config.RootCAPath));
+                chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+
+                if (chain.Build(new X509Certificate2(certificate)))
+                {
+                    return ValidateCertificateDetails(certificate, chain);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Certificate chain validation failed: {ex.Message}", ex);
+            }
+        }
+
+        _logger.Warning($"Server certificate validation failed: {sslPolicyErrors}");
+        return false;
+    }
+
+    private bool ValidateCertificateDetails(X509Certificate certificate, X509Chain? chain)
+    {
+        if (!_config.EnableStrictCertificateValidation)
+        {
+            _logger.Debug("Strict certificate validation is disabled");
+            return true;
+        }
+
+        var cert2 = certificate as X509Certificate2 ?? new X509Certificate2(certificate);
+
+        if (!ValidateCertificateValidityPeriod(cert2))
+            return false;
+
+        if (!ValidateCertificateIssuer(cert2))
+            return false;
+
+        if (_config.ValidateCertificateSubject && !ValidateCertificateSubjectName(cert2))
+            return false;
+
+        _logger.Debug("Certificate validation passed all checks");
+        return true;
+    }
+
+    private bool ValidateCertificateValidityPeriod(X509Certificate2 certificate)
+    {
+        var now = DateTime.UtcNow;
+
+        if (now < certificate.NotBefore)
+        {
+            _logger.Error($"Certificate is not yet valid. NotBefore: {certificate.NotBefore:O}, Current: {now:O}");
+            return false;
+        }
+
+        if (now > certificate.NotAfter)
+        {
+            _logger.Error($"Certificate has expired. NotAfter: {certificate.NotAfter:O}, Current: {now:O}");
+            return false;
+        }
+
+        var daysUntilExpiry = (certificate.NotAfter - now).TotalDays;
+        if (daysUntilExpiry < 30)
+        {
+            _logger.Warning($"Certificate will expire in {daysUntilExpiry:F1} days. NotAfter: {certificate.NotAfter:O}");
+        }
+
+        _logger.Debug($"Certificate validity period check passed. Valid from {certificate.NotBefore:O} to {certificate.NotAfter:O}");
+        return true;
+    }
+
+    private bool ValidateCertificateIssuer(X509Certificate2 certificate)
+    {
+        if (string.IsNullOrEmpty(_config.ExpectedCertificateIssuer))
+        {
+            _logger.Debug("No expected certificate issuer configured, skipping issuer validation");
+            return true;
+        }
+
+        var issuer = certificate.Issuer;
+        if (!issuer.Contains(_config.ExpectedCertificateIssuer, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.Error($"Certificate issuer mismatch. Expected to contain: '{_config.ExpectedCertificateIssuer}', Actual: '{issuer}'");
+            return false;
+        }
+
+        _logger.Debug($"Certificate issuer validation passed. Issuer: {issuer}");
+        return true;
+    }
+
+    private bool ValidateCertificateSubjectName(X509Certificate2 certificate)
+    {
+        var subject = certificate.Subject;
+        var endpoint = _currentEndpoint;
+
+        if (string.IsNullOrEmpty(endpoint))
+        {
+            _logger.Warning("No endpoint available for subject name validation");
+            return true;
+        }
+
+        if (subject.Contains($"CN={endpoint}", StringComparison.OrdinalIgnoreCase) ||
+            subject.Contains($"DNS={endpoint}", StringComparison.OrdinalIgnoreCase) ||
+            subject.Contains(endpoint, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.Debug($"Certificate subject name validation passed. Subject: {subject}, Endpoint: {endpoint}");
+            return true;
+        }
+
+        foreach (var extension in certificate.Extensions)
+        {
+            if (extension is X509SubjectAlternativeNameExtension sanExtension)
+            {
+                var sanNames = sanExtension.EnumerateDnsNames();
+                foreach (var name in sanNames)
+                {
+                    if (string.Equals(name, endpoint, StringComparison.OrdinalIgnoreCase) ||
+                        (name.StartsWith("*.") && endpoint.EndsWith(name[1..], StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _logger.Debug($"Certificate SAN validation passed. SAN: {name}, Endpoint: {endpoint}");
+                        return true;
+                    }
+                }
+            }
+        }
+
+        _logger.Error($"Certificate subject name mismatch. Subject: {subject}, Expected endpoint: {endpoint}");
+        return false;
     }
 }

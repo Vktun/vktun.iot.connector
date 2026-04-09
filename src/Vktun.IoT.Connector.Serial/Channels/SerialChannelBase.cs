@@ -94,7 +94,7 @@ public abstract class SerialChannelBase : ICommunicationChannel
 
     public virtual void Dispose()
     {
-        DisposeAsync().AsTask().Wait();
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
 

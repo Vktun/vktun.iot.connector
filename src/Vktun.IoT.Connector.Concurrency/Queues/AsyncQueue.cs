@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
 
@@ -6,40 +6,34 @@ namespace Vktun.IoT.Connector.Concurrency.Queues;
 
 public class AsyncQueue<T> : IAsyncDisposable
 {
-    private readonly BlockingCollection<T> _queue;
-    private readonly SemaphoreSlim _signal;
+    private readonly Channel<T> _channel;
     private readonly int _capacity;
     private bool _isDisposed;
 
-    public int Count => _queue.Count;
+    public int Count => _channel.Reader.Count;
     public int Capacity => _capacity;
-    public bool IsFull => _queue.Count >= _capacity;
-    public bool IsEmpty => _queue.Count == 0;
+    public bool IsFull => _channel.Reader.Count >= _capacity;
+    public bool IsEmpty => _channel.Reader.Count == 0;
 
     public AsyncQueue(int capacity = 10000)
     {
         _capacity = capacity;
-        _queue = new BlockingCollection<T>(capacity);
-        _signal = new SemaphoreSlim(0, capacity);
+        _channel = Channel.CreateBounded<T>(new BoundedChannelOptions(capacity)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = false,
+            SingleWriter = false
+        });
     }
 
     public bool TryEnqueue(T item)
     {
-        if (_isDisposed || IsFull)
+        if (_isDisposed)
         {
             return false;
         }
 
-        try
-        {
-            _queue.Add(item);
-            _signal.Release();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        return _channel.Writer.TryWrite(item);
     }
 
     public async Task<bool> EnqueueAsync(T item, CancellationToken cancellationToken = default)
@@ -51,8 +45,7 @@ public class AsyncQueue<T> : IAsyncDisposable
 
         try
         {
-            _queue.Add(item);
-            _signal.Release();
+            await _channel.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
             return true;
         }
         catch
@@ -64,12 +57,12 @@ public class AsyncQueue<T> : IAsyncDisposable
     public bool TryDequeue(out T? item)
     {
         item = default;
-        if (_isDisposed || IsEmpty)
+        if (_isDisposed)
         {
             return false;
         }
 
-        return _queue.TryTake(out item);
+        return _channel.Reader.TryRead(out item);
     }
 
     public async Task<T?> DequeueAsync(CancellationToken cancellationToken = default)
@@ -79,37 +72,24 @@ public class AsyncQueue<T> : IAsyncDisposable
             return default;
         }
 
-        await _signal.WaitAsync(cancellationToken);
-        
-        if (_queue.TryTake(out var item))
+        try
         {
-            return item;
+            return await _channel.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
         }
-        
-        return default;
+        catch (ChannelClosedException)
+        {
+            return default;
+        }
     }
 
     public IAsyncEnumerable<T> GetConsumingEnumerable(CancellationToken cancellationToken = default)
     {
-        return GetConsumingEnumerableAsync(cancellationToken);
-    }
-
-    private async IAsyncEnumerable<T> GetConsumingEnumerableAsync(
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested && !_isDisposed)
-        {
-            var item = await DequeueAsync(cancellationToken);
-            if (item != null)
-            {
-                yield return item;
-            }
-        }
+        return _channel.Reader.ReadAllAsync(cancellationToken);
     }
 
     public void Clear()
     {
-        while (_queue.TryTake(out _)) { }
+        while (_channel.Reader.TryRead(out _)) { }
     }
 
     public async ValueTask DisposeAsync()
@@ -120,9 +100,7 @@ public class AsyncQueue<T> : IAsyncDisposable
         }
 
         _isDisposed = true;
-        _queue.CompleteAdding();
-        _queue.Dispose();
-        _signal.Dispose();
+        _channel.Writer.Complete();
         
         GC.SuppressFinalize(this);
     }

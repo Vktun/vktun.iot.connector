@@ -115,21 +115,28 @@ public class ResourceMonitor : IResourceMonitor
 
     private void UpdateMetrics()
     {
+        double cpuUsage;
+        long memoryUsage;
+        int threadCount;
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && _cpuCounter != null)
+        {
+            cpuUsage = _cpuCounter.NextValue();
+        }
+        else
+        {
+            cpuUsage = GetLinuxCpuUsage();
+        }
+
+        var process = Process.GetCurrentProcess();
+        memoryUsage = process.WorkingSet64;
+        threadCount = process.Threads.Count;
+
         lock (_lockObject)
         {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && _cpuCounter != null)
-            {
-                _cpuUsage = _cpuCounter.NextValue();
-            }
-            else
-            {
-                _cpuUsage = GetLinuxCpuUsage();
-            }
-
-            var process = Process.GetCurrentProcess();
-            _memoryUsage = process.WorkingSet64;
-            _threadCount = process.Threads.Count;
-            
+            _cpuUsage = cpuUsage;
+            _memoryUsage = memoryUsage;
+            _threadCount = threadCount;
             _activeConnections = 0;
             _socketHandleCount = 0;
         }
@@ -147,20 +154,21 @@ public class ResourceMonitor : IResourceMonitor
             var process = Process.GetCurrentProcess();
             var startTime = DateTime.UtcNow;
             var startCpuUsage = process.TotalProcessorTime;
-            
+
             Thread.Sleep(500);
-            
+
             var endTime = DateTime.UtcNow;
             var endCpuUsage = process.TotalProcessorTime;
-            
+
             var cpuUsedMs = (endCpuUsage - startCpuUsage).TotalMilliseconds;
             var totalMsPassed = (endTime - startTime).TotalMilliseconds;
             var cpuUsageTotal = cpuUsedMs / (Environment.ProcessorCount * totalMsPassed);
-            
+
             return cpuUsageTotal * 100;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.Error($"Failed to get Linux CPU usage: {ex.Message}", ex);
             return 0;
         }
     }

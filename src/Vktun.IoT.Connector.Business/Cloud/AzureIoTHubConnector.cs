@@ -40,6 +40,11 @@ public class AzureIoTHubConfig
     /// 是否启用直接方法
     /// </summary>
     public bool EnableDirectMethods { get; set; } = true;
+
+    /// <summary>
+    /// 传输方式（默认 Mqtt_Tcp_Only）
+    /// </summary>
+    public TransportType TransportType { get; set; } = TransportType.Mqtt_Tcp_Only;
 }
 
 /// <summary>
@@ -58,7 +63,6 @@ public class AzureIoTHubConnector : IAsyncDisposable
 {
     private readonly AzureIoTHubConfig _config;
     private readonly ILogger _logger;
-    private readonly string _connectionString;
     private bool _isConnected;
     private Timer? _heartbeatTimer;
     private DeviceTwinProperties _twinProperties = new();
@@ -72,9 +76,6 @@ public class AzureIoTHubConnector : IAsyncDisposable
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        // 构建连接字符串
-        _connectionString = $"HostName={_config.HostName};DeviceId={_config.DeviceId};SharedAccessKey={_config.SharedAccessKey}";
     }
 
     /// <summary>
@@ -86,9 +87,11 @@ public class AzureIoTHubConnector : IAsyncDisposable
         {
             _logger.Info($"Connecting to Azure IoT Hub: {_config.HostName}, Device: {_config.DeviceId}");
 
-            _deviceClient = DeviceClient.CreateFromConnectionString(
-                _connectionString,
-                TransportType.Mqtt_Tcp_Only);
+            var authMethod = new DeviceAuthenticationWithRegistrySymmetricKey(_config.DeviceId, _config.SharedAccessKey);
+            _deviceClient = DeviceClient.Create(
+                _config.HostName,
+                authMethod,
+                _config.TransportType);
 
             await _deviceClient.OpenAsync(cancellationToken).ConfigureAwait(false);
 
@@ -101,6 +104,11 @@ public class AzureIoTHubConnector : IAsyncDisposable
             if (_config.EnableTwinSync)
             {
                 await GetTwinAsync(cancellationToken);
+            }
+
+            if (_config.EnableDirectMethods)
+            {
+                await SetupDirectMethodHandlerAsync(cancellationToken);
             }
 
             _logger.Info($"Successfully connected to Azure IoT Hub");
@@ -245,33 +253,38 @@ public class AzureIoTHubConnector : IAsyncDisposable
     /// </summary>
     public async Task RespondToDirectMethodAsync(string methodName, int status, object? payload, CancellationToken cancellationToken = default)
     {
-        if (!_isConnected)
+        if (!_isConnected || _deviceClient == null)
         {
             _logger.Warning("Not connected to Azure IoT Hub");
             return;
         }
 
-        try
-        {
-            _logger.Debug($"Responding to direct method {methodName} with status {status}");
+        _logger.Debug($"Direct method response prepared for {methodName} with status {status}");
+    }
 
-            if (_deviceClient != null)
+    public async Task SetupDirectMethodHandlerAsync(CancellationToken cancellationToken = default)
+    {
+        if (_deviceClient == null || !_config.EnableDirectMethods)
+            return;
+
+        await _deviceClient.SetMethodDefaultHandlerAsync(
+            async (methodRequest, userContext) =>
             {
-                try
+                _logger.Info($"Direct method received: {methodRequest.Name}");
+
+                DirectMethodReceived?.Invoke(this, new DirectMethodRequest
                 {
-                    var payloadData = payload != null ? Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload)) : Array.Empty<byte>();
-                    _logger.Info($"Method response prepared for {methodName} with status {status}");
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Failed to prepare method response for {methodName}: {ex.Message}");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Error($"Failed to respond to direct method: {ex.Message}", ex);
-        }
+                    MethodName = methodRequest.Name,
+                    RequestId = Guid.NewGuid().ToString(),
+                    Payload = methodRequest.DataAsJson,
+                    Timestamp = DateTime.UtcNow
+                });
+
+                var resultData = methodRequest.DataAsJson ?? "{}";
+                return await Task.FromResult(new MethodResponse(Encoding.UTF8.GetBytes(resultData), 200));
+            },
+            null,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

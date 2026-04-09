@@ -1,3 +1,4 @@
+using System.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Vktun.IoT.Connector.Core.Interfaces;
@@ -14,13 +15,19 @@ public class CertificateManager : IDisposable
     private readonly object _lock = new();
     private FileSystemWatcher? _watcher;
     private readonly string _certificatePath;
-    private readonly string _certificatePassword;
+    private readonly SecureString _certificatePassword;
 
     public CertificateManager(string certificatePath, string certificatePassword, ILogger logger)
     {
         _certificatePath = certificatePath ?? throw new ArgumentNullException(nameof(certificatePath));
-        _certificatePassword = certificatePassword ?? throw new ArgumentNullException(nameof(certificatePassword));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        _certificatePassword = new SecureString();
+        foreach (var c in certificatePassword ?? string.Empty)
+        {
+            _certificatePassword.AppendChar(c);
+        }
+        _certificatePassword.MakeReadOnly();
 
         LoadCertificate();
         SetupFileWatcher();
@@ -97,11 +104,18 @@ public class CertificateManager : IDisposable
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size
             };
 
-            _watcher.Changed += (sender, e) =>
+            _watcher.Changed += async (sender, e) =>
             {
                 _logger.Info("Certificate file changed, reloading...");
-                // 延迟加载，避免文件写入未完成
-                Task.Delay(1000).ContinueWith(_ => LoadCertificate());
+                try
+                {
+                    await Task.Delay(1000);
+                    LoadCertificate();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Failed to reload certificate after file change: {ex.Message}", ex);
+                }
             };
 
             _watcher.EnableRaisingEvents = true;
@@ -181,6 +195,7 @@ public class CertificateManager : IDisposable
     public void Dispose()
     {
         _watcher?.Dispose();
+        _certificatePassword.Dispose();
         lock (_lock)
         {
             _serverCertificate?.Dispose();

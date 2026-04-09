@@ -34,7 +34,7 @@ public class MainWindowViewModel : BindableBase
         }
     }
     
-    private string _statusMessage = "就绪";
+    private string _statusMessage = "Ready";
     public string StatusMessage
     {
         get => _statusMessage;
@@ -64,7 +64,7 @@ public class MainWindowViewModel : BindableBase
         ? new SolidColorBrush(Color.FromRgb(76, 175, 80)) 
         : new SolidColorBrush(Color.FromRgb(244, 67, 54));
     
-    public string ConnectionStatusText => IsConnected ? "已连接" : "未连接";
+    public string ConnectionStatusText => IsConnected ? "Connected" : "Disconnected";
     
     public ObservableCollection<MenuItem> MenuItems { get; }
     
@@ -74,12 +74,13 @@ public class MainWindowViewModel : BindableBase
         
         MenuItems = new ObservableCollection<MenuItem>
         {
-            new MenuItem { Title = "Modbus TCP", Icon = "🔌", ViewName = "ModbusTcpView" },
-            new MenuItem { Title = "Modbus RTU", Icon = "🔌", ViewName = "ModbusRtuView" },
+            new MenuItem { Title = "Modbus TCP", Icon = "🔧", ViewName = "ModbusTcpView" },
+            new MenuItem { Title = "Modbus RTU", Icon = "🔧", ViewName = "ModbusRtuView" },
             new MenuItem { Title = "西门子 S7", Icon = "🏭", ViewName = "SiemensView" },
             new MenuItem { Title = "三菱 PLC", Icon = "🏭", ViewName = "MitsubishiView" },
             new MenuItem { Title = "欧姆龙 PLC", Icon = "🏭", ViewName = "OmronView" },
-            new MenuItem { Title = "串口调试", Icon = "📡", ViewName = "SerialPortView" }
+            new MenuItem { Title = "串口调试", Icon = "📡", ViewName = "SerialPortView" },
+            new MenuItem { Title = "Socket 调试", Icon = "S", ViewName = "SocketDebugView" }
         };
         
         _timer = new DispatcherTimer

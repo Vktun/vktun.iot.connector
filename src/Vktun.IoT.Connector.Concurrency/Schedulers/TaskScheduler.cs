@@ -101,6 +101,7 @@ public class TaskScheduler : ITaskScheduler
 
         if (!_taskQueue.TryAdd(taskItem, Timeout.Infinite, cancellationToken))
         {
+            _taskResults.TryRemove(taskItem.TaskId, out _);
             completionSource.TrySetResult(new CommandResult
             {
                 CommandId = taskItem.TaskId,

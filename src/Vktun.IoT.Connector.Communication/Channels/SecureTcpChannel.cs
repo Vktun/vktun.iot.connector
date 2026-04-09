@@ -18,6 +18,7 @@ public class SecureTcpChannel : CommunicationChannelBase
     private readonly IAuthenticationProvider? _authProvider;
     private readonly TlsConfig? _tlsConfig;
     private readonly ConcurrentDictionary<string, SslStream?> _sslStreams;
+    private readonly ConcurrentDictionary<string, X509Certificate2> _clientCertificates;
     private Socket? _clientSocket;
     private readonly object _connectLock = new();
 
@@ -31,6 +32,7 @@ public class SecureTcpChannel : CommunicationChannelBase
         _authProvider = authProvider;
         _tlsConfig = tlsConfig;
         _sslStreams = new ConcurrentDictionary<string, SslStream?>();
+        _clientCertificates = new ConcurrentDictionary<string, X509Certificate2>();
     }
 
     public override CommunicationType CommunicationType => CommunicationType.Tcp;
@@ -69,15 +71,15 @@ public class SecureTcpChannel : CommunicationChannelBase
 
         try
         {
-            _clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
-            _clientSocket.NoDelay = true;
-            _clientSocket.ReceiveBufferSize = 8192;
-            _clientSocket.SendBufferSize = 8192;
+            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+            socket.NoDelay = true;
+            socket.ReceiveBufferSize = 8192;
+            socket.SendBufferSize = 8192;
 
             var endPoint = new IPEndPoint(IPAddress.Parse(device.IpAddress), device.Port);
-            await _clientSocket.ConnectAsync(endPoint, cancellationToken);
+            await socket.ConnectAsync(endPoint, cancellationToken);
 
-            var networkStream = new NetworkStream(_clientSocket, true);
+            var networkStream = new NetworkStream(socket, true);
             Stream stream = networkStream;
 
             if (_tlsConfig != null && _tlsConfig.Enabled)
@@ -86,16 +88,30 @@ public class SecureTcpChannel : CommunicationChannelBase
                 if (stream == null)
                 {
                     _logger.Error($"TLS handshake failed for device {deviceId}");
-                    _clientSocket.Dispose();
-                    _clientSocket = null;
+                    networkStream.Dispose();
+                    socket.Dispose();
                     return false;
                 }
+            }
+
+            lock (_connectLock)
+            {
+                if (_connections.ContainsKey(deviceId))
+                {
+                    _logger.Debug($"Device {deviceId} is already connected");
+                    stream.Dispose();
+                    socket.Dispose();
+                    return true;
+                }
+
+                _clientSocket?.Dispose();
+                _clientSocket = socket;
             }
 
             var connection = new DeviceConnection
             {
                 DeviceId = deviceId,
-                Socket = _clientSocket,
+                Socket = socket,
                 RemoteEndPoint = endPoint,
                 ConnectTime = DateTime.UtcNow,
                 LastActiveTime = DateTime.UtcNow,
@@ -188,7 +204,36 @@ public class SecureTcpChannel : CommunicationChannelBase
 
     public override async Task<int> SendAsync(string deviceId, ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
     {
-        return await SendAsync(deviceId, data.ToArray(), cancellationToken);
+        if (!_connections.TryGetValue(deviceId, out var connection))
+        {
+            _logger.Warning($"Device {deviceId} is not connected");
+            return 0;
+        }
+
+        try
+        {
+            if (_sslStreams.TryGetValue(deviceId, out var sslStream) && sslStream != null)
+            {
+                await sslStream.WriteAsync(data, cancellationToken);
+                await sslStream.FlushAsync(cancellationToken);
+            }
+            else if (connection.Socket != null)
+            {
+                await connection.Socket.SendAsync(data, SocketFlags.None, cancellationToken);
+            }
+
+            connection.BytesSent += data.Length;
+            connection.LastActiveTime = DateTime.UtcNow;
+
+            _logger.Debug($"Sent {data.Length} bytes to device {deviceId}");
+            return data.Length;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Error sending data to device {deviceId}: {ex.Message}", ex);
+            OnErrorOccurred(deviceId, "Send failed", ex);
+            return 0;
+        }
     }
 
     public override async IAsyncEnumerable<ReceivedData> ReceiveAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -301,7 +346,12 @@ public class SecureTcpChannel : CommunicationChannelBase
             {
                 var clientCert = new X509Certificate2(_tlsConfig.CertificatePath, _tlsConfig.CertificatePassword);
                 clientCertificates.Add(clientCert);
+                _clientCertificates[targetHost] = clientCert;
             }
+
+            var revocationMode = (_tlsConfig?.CheckCertificateRevocation ?? true)
+                ? X509RevocationMode.Online
+                : X509RevocationMode.NoCheck;
 
             await sslStream.AuthenticateAsClientAsync(
                 new SslClientAuthenticationOptions
@@ -309,7 +359,7 @@ public class SecureTcpChannel : CommunicationChannelBase
                     TargetHost = targetHost,
                     ClientCertificates = clientCertificates,
                     EnabledSslProtocols = sslProtocols,
-                    CertificateRevocationCheckMode = X509RevocationMode.NoCheck
+                    CertificateRevocationCheckMode = revocationMode
                 },
                 cancellationToken);
 
@@ -330,12 +380,13 @@ public class SecureTcpChannel : CommunicationChannelBase
 
         _logger.Warning($"Certificate validation errors: {sslPolicyErrors}");
 
-#if DEBUG
-        _logger.Warning("Accepting certificate in DEBUG mode despite errors");
-        return true;
-#else
+        if (_tlsConfig?.AllowInsecureCertificate == true)
+        {
+            _logger.Warning("Accepting insecure certificate (AllowInsecureCertificate is enabled)");
+            return true;
+        }
+
         return false;
-#endif
     }
 
     public override async ValueTask DisposeAsync()
@@ -347,6 +398,12 @@ public class SecureTcpChannel : CommunicationChannelBase
             kvp.Value?.Dispose();
         }
         _sslStreams.Clear();
+
+        foreach (var cert in _clientCertificates.Values)
+        {
+            cert.Dispose();
+        }
+        _clientCertificates.Clear();
 
         await base.DisposeAsync();
     }

@@ -1,0 +1,18 @@
+<Project>
+  <!-- 仅对可打包项目应用 NuGet 元数据（在项目文件之后导入，此时 IsPackable 已设置） -->
+  <PropertyGroup Condition="'$(IsPackable)' == 'true'">
+    <Authors>Vktun</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/Vktun/vktun.iot.connector</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>IoT;Connector;Modbus;Industrial;Automation</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <IncludeSymbols>true</IncludeSymbols>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+</Project>

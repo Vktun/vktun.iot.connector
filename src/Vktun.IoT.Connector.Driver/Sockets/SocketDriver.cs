@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
 using Vktun.IoT.Connector.Core.Interfaces;
-using Vktun.IoT.Connector.Core.Models;
 
 namespace Vktun.IoT.Connector.Driver.Sockets;
 
@@ -10,8 +9,8 @@ public interface ISocketDriver : IAsyncDisposable
     bool IsConnected { get; }
     IPEndPoint? LocalEndPoint { get; }
     IPEndPoint? RemoteEndPoint { get; }
-    
-    Task<bool> ConnectAsync(IPEndPoint remoteEndPoint, CancellationToken cancellationToken = default);
+
+    Task<bool> ConnectAsync(IPEndPoint remoteEndPoint, IPEndPoint? localEndPoint = null, CancellationToken cancellationToken = default);
     Task DisconnectAsync();
     Task<int> SendAsync(byte[] data, CancellationToken cancellationToken = default);
     Task<int> SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default);
@@ -35,50 +34,80 @@ public class TcpSocketDriver : ISocketDriver
 
     public TcpSocketDriver(IConfigurationProvider configProvider, ILogger logger)
     {
-        _logger = logger;
+        ArgumentNullException.ThrowIfNull(configProvider);
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
         var config = configProvider.GetConfig();
         _receiveBufferSize = config.Tcp.ReceiveBufferSize;
         _sendBufferSize = config.Tcp.SendBufferSize;
         _noDelay = config.Tcp.NoDelay;
     }
 
-    public async Task<bool> ConnectAsync(IPEndPoint remoteEndPoint, CancellationToken cancellationToken = default)
+    public async Task<bool> ConnectAsync(IPEndPoint remoteEndPoint, IPEndPoint? localEndPoint = null, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(remoteEndPoint);
+
         try
         {
-            _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            await DisconnectAsync().ConfigureAwait(false);
+
+            _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+            {
+                ReceiveBufferSize = _receiveBufferSize,
+                SendBufferSize = _sendBufferSize,
+                NoDelay = _noDelay
+            };
+
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            _socket.ReceiveBufferSize = _receiveBufferSize;
-            _socket.SendBufferSize = _sendBufferSize;
-            _socket.NoDelay = _noDelay;
-            
-            await _socket.ConnectAsync(remoteEndPoint, cancellationToken);
-            _logger.Info($"TCP连接成功: {remoteEndPoint}");
+
+            if (localEndPoint != null)
+            {
+                _socket.Bind(localEndPoint);
+            }
+
+            await _socket.ConnectAsync(remoteEndPoint, cancellationToken).ConfigureAwait(false);
+            _logger.Info($"TCP connected: {remoteEndPoint}");
             return true;
         }
         catch (Exception ex)
         {
-            _logger.Error($"TCP连接失败: {ex.Message}", ex);
+            _logger.Error($"TCP connect failed: {ex.Message}", ex);
+            await DisconnectAsync().ConfigureAwait(false);
             return false;
         }
     }
 
     public Task DisconnectAsync()
     {
-        if (_socket != null && _socket.Connected)
+        if (_socket == null)
         {
-            _socket.Shutdown(SocketShutdown.Both);
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            if (_socket.Connected)
+            {
+                _socket.Shutdown(SocketShutdown.Both);
+            }
+        }
+        catch (SocketException)
+        {
+        }
+        finally
+        {
             _socket.Close();
             _socket.Dispose();
             _socket = null;
-            _logger.Info("TCP连接已断开");
         }
+
+        _logger.Info("TCP disconnected.");
         return Task.CompletedTask;
     }
 
-    public async Task<int> SendAsync(byte[] data, CancellationToken cancellationToken = default)
+    public Task<int> SendAsync(byte[] data, CancellationToken cancellationToken = default)
     {
-        return await SendAsync(new ReadOnlyMemory<byte>(data), cancellationToken);
+        return SendAsync(new ReadOnlyMemory<byte>(data), cancellationToken);
     }
 
     public async Task<int> SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
@@ -90,18 +119,18 @@ public class TcpSocketDriver : ISocketDriver
 
         try
         {
-            return await _socket.SendAsync(data, SocketFlags.None, cancellationToken);
+            return await _socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.Error($"TCP发送数据失败: {ex.Message}", ex);
+            _logger.Error($"TCP send failed: {ex.Message}", ex);
             return 0;
         }
     }
 
-    public async Task<int> ReceiveAsync(byte[] buffer, CancellationToken cancellationToken = default)
+    public Task<int> ReceiveAsync(byte[] buffer, CancellationToken cancellationToken = default)
     {
-        return await ReceiveAsync(new Memory<byte>(buffer), cancellationToken);
+        return ReceiveAsync(new Memory<byte>(buffer), cancellationToken);
     }
 
     public async Task<int> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
@@ -113,11 +142,11 @@ public class TcpSocketDriver : ISocketDriver
 
         try
         {
-            return await _socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken);
+            return await _socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.Error($"TCP接收数据失败: {ex.Message}", ex);
+            _logger.Error($"TCP receive failed: {ex.Message}", ex);
             return 0;
         }
     }
@@ -134,7 +163,7 @@ public class TcpSocketDriver : ISocketDriver
             return;
         }
 
-        await DisconnectAsync();
+        await DisconnectAsync().ConfigureAwait(false);
         _isDisposed = true;
         GC.SuppressFinalize(this);
     }
@@ -153,45 +182,60 @@ public class UdpSocketDriver : ISocketDriver
 
     public UdpSocketDriver(IConfigurationProvider configProvider, ILogger logger)
     {
-        _logger = logger;
-        var config = configProvider.GetConfig();
-        _receiveBufferSize = config.Udp.ReceiveBufferSize;
+        ArgumentNullException.ThrowIfNull(configProvider);
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _receiveBufferSize = configProvider.GetConfig().Udp.ReceiveBufferSize;
     }
 
-    public Task<bool> ConnectAsync(IPEndPoint remoteEndPoint, CancellationToken cancellationToken = default)
+    public Task<bool> ConnectAsync(IPEndPoint remoteEndPoint, IPEndPoint? localEndPoint = null, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(remoteEndPoint);
+
         try
         {
-            _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            _socket?.Dispose();
+            _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp)
+            {
+                ReceiveBufferSize = _receiveBufferSize
+            };
+
             _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            _socket.ReceiveBufferSize = _receiveBufferSize;
+
+            if (localEndPoint != null)
+            {
+                _socket.Bind(localEndPoint);
+            }
+
             _socket.Connect(remoteEndPoint);
-            
-            _logger.Info($"UDP绑定成功: {remoteEndPoint}");
+            _logger.Info($"UDP connected: {remoteEndPoint}");
             return Task.FromResult(true);
         }
         catch (Exception ex)
         {
-            _logger.Error($"UDP绑定失败: {ex.Message}", ex);
+            _logger.Error($"UDP connect failed: {ex.Message}", ex);
+            _socket?.Dispose();
+            _socket = null;
             return Task.FromResult(false);
         }
     }
 
     public Task DisconnectAsync()
     {
-        if (_socket != null)
+        if (_socket == null)
         {
-            _socket.Close();
-            _socket.Dispose();
-            _socket = null;
-            _logger.Info("UDP已关闭");
+            return Task.CompletedTask;
         }
+
+        _socket.Close();
+        _socket.Dispose();
+        _socket = null;
+        _logger.Info("UDP disconnected.");
         return Task.CompletedTask;
     }
 
-    public async Task<int> SendAsync(byte[] data, CancellationToken cancellationToken = default)
+    public Task<int> SendAsync(byte[] data, CancellationToken cancellationToken = default)
     {
-        return await SendAsync(new ReadOnlyMemory<byte>(data), cancellationToken);
+        return SendAsync(new ReadOnlyMemory<byte>(data), cancellationToken);
     }
 
     public async Task<int> SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
@@ -203,18 +247,18 @@ public class UdpSocketDriver : ISocketDriver
 
         try
         {
-            return await _socket.SendAsync(data, SocketFlags.None, cancellationToken);
+            return await _socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.Error($"UDP发送数据失败: {ex.Message}", ex);
+            _logger.Error($"UDP send failed: {ex.Message}", ex);
             return 0;
         }
     }
 
-    public async Task<int> ReceiveAsync(byte[] buffer, CancellationToken cancellationToken = default)
+    public Task<int> ReceiveAsync(byte[] buffer, CancellationToken cancellationToken = default)
     {
-        return await ReceiveAsync(new Memory<byte>(buffer), cancellationToken);
+        return ReceiveAsync(new Memory<byte>(buffer), cancellationToken);
     }
 
     public async Task<int> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
@@ -226,11 +270,11 @@ public class UdpSocketDriver : ISocketDriver
 
         try
         {
-            return await _socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken);
+            return await _socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.Error($"UDP接收数据失败: {ex.Message}", ex);
+            _logger.Error($"UDP receive failed: {ex.Message}", ex);
             return 0;
         }
     }
@@ -247,7 +291,7 @@ public class UdpSocketDriver : ISocketDriver
             return;
         }
 
-        await DisconnectAsync();
+        await DisconnectAsync().ConfigureAwait(false);
         _isDisposed = true;
         GC.SuppressFinalize(this);
     }

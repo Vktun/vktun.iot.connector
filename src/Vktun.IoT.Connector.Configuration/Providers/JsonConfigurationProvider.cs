@@ -33,7 +33,8 @@ public class JsonConfigurationProvider : IConfigurationProvider
     {
         lock (_lockObject)
         {
-            return _config;
+            return JsonSerializer.Deserialize<SdkConfig>(JsonSerializer.Serialize(_config, JsonOptions), JsonOptions)
+                ?? new SdkConfig();
         }
     }
 

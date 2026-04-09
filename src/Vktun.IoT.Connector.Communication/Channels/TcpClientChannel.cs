@@ -2,6 +2,7 @@ using System.Net;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
+using Vktun.IoT.Connector.Core.Utils;
 using Vktun.IoT.Connector.Driver.Sockets;
 
 namespace Vktun.IoT.Connector.Communication.Channels;
@@ -81,11 +82,11 @@ public class TcpClientChannel : CommunicationChannelBase
 
     public override async IAsyncEnumerable<ReceivedData> ReceiveAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        while (!cancellationToken.IsCancellationRequested && _isConnected)
-        {
-            await Task.Delay(100, cancellationToken).ConfigureAwait(false);
-            yield break;
-        }
+        await Task.CompletedTask.ConfigureAwait(false);
+        throw new NotSupportedException("TcpClientChannel uses event-based data reception (DataReceived event). Use OnDataReceived instead of ReceiveAsync.");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
     }
 
     public override async Task<bool> ConnectDeviceAsync(DeviceInfo device, CancellationToken cancellationToken = default)
@@ -100,8 +101,21 @@ public class TcpClientChannel : CommunicationChannelBase
 
             await OpenAsync(cancellationToken).ConfigureAwait(false);
 
-            var endPoint = new IPEndPoint(IPAddress.Parse(device.IpAddress), device.Port);
-            var connected = await _socketDriver.ConnectAsync(endPoint, cancellationToken).ConfigureAwait(false);
+            var settings = ConnectionSettingsValidator.ValidateAndNormalize(device).Settings;
+            if (settings?.RemoteAddress == null)
+            {
+                OnErrorOccurred(device.DeviceId, "TCP client mode requires a valid remote endpoint.");
+                return false;
+            }
+
+            var endPoint = new IPEndPoint(settings.RemoteAddress, settings.RemotePort);
+            IPEndPoint? localEndPoint = null;
+            if (settings.LocalPort > 0 || !settings.LocalAddress.Equals(IPAddress.Any))
+            {
+                localEndPoint = new IPEndPoint(settings.LocalAddress, settings.LocalPort);
+            }
+
+            var connected = await _socketDriver.ConnectAsync(endPoint, localEndPoint, cancellationToken).ConfigureAwait(false);
             if (!connected)
             {
                 return false;
@@ -119,6 +133,9 @@ public class TcpClientChannel : CommunicationChannelBase
             };
 
             _connections[device.DeviceId] = connection;
+            ChannelId = localEndPoint == null
+                ? "TcpClient"
+                : $"TcpClient_{localEndPoint.Address}_{localEndPoint.Port}";
             _receiveLoopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, connection.CancellationTokenSource.Token);
             _ = ReceiveLoopAsync(device.DeviceId, connection.ReceiveBuffer, _receiveLoopCts.Token);
             OnDeviceConnected(device.DeviceId, device);
@@ -181,5 +198,22 @@ public class TcpClientChannel : CommunicationChannelBase
                 break;
             }
         }
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await CloseAsync();
+
+        if (_socketDriver is IAsyncDisposable asyncDisposable)
+        {
+            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+        }
+        else if (_socketDriver is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+
+        _connectionLock.Dispose();
+        await base.DisposeAsync();
     }
 }

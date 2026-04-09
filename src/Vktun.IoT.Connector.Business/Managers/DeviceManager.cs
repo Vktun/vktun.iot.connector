@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
+using Vktun.IoT.Connector.Core.Utils;
 
 namespace Vktun.IoT.Connector.Business.Managers;
 
@@ -29,6 +30,12 @@ public class DeviceManager : IDeviceManager
     {
         if (string.IsNullOrWhiteSpace(device.DeviceId))
         {
+            return Task.FromResult(false);
+        }
+
+        if (!ConnectionSettingsValidator.TryNormalize(device, out var errorMessage))
+        {
+            _logger.Warning($"Device {device.DeviceId} has invalid connection settings: {errorMessage}");
             return Task.FromResult(false);
         }
 
@@ -110,6 +117,13 @@ public class DeviceManager : IDeviceManager
         var device = await GetDeviceAsync(deviceId).ConfigureAwait(false);
         if (device == null)
         {
+            return false;
+        }
+
+        if (!ConnectionSettingsValidator.TryNormalize(device, out var errorMessage))
+        {
+            _logger.Warning($"Device {deviceId} has invalid connection settings: {errorMessage}");
+            await UpdateDeviceStatusAsync(deviceId, DeviceStatus.Error).ConfigureAwait(false);
             return false;
         }
 

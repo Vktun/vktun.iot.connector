@@ -10,7 +10,7 @@ namespace Vktun.IoT.Connector.Protocol.Parsers;
 public class S7ProtocolParser : IProtocolParser
 {
     private readonly ILogger _logger;
-    private ushort _pduReference;
+    private int _pduReference;
 
     public ProtocolType Type => ProtocolType.S7;
     public string Name => "西门子S7协议解析器";
@@ -102,10 +102,10 @@ public class S7ProtocolParser : IProtocolParser
 
     public byte[] BuildReadCommand(S7ReadRequest request, S7Config config)
     {
-        _pduReference++;
+        var pduRef = (ushort)Interlocked.Increment(ref _pduReference);
 
         var parameterBytes = BuildReadParameter(request);
-        var headerBytes = BuildHeader(0x01, _pduReference, (ushort)parameterBytes.Length, 0);
+        var headerBytes = BuildHeader(0x01, pduRef, (ushort)parameterBytes.Length, 0);
 
         var result = new byte[headerBytes.Length + parameterBytes.Length];
         Buffer.BlockCopy(headerBytes, 0, result, 0, headerBytes.Length);
@@ -116,12 +116,12 @@ public class S7ProtocolParser : IProtocolParser
 
     public byte[] BuildWriteCommand(S7WriteRequest request, S7Config config)
     {
-        _pduReference++;
+        var pduRef = (ushort)Interlocked.Increment(ref _pduReference);
 
         var parameterBytes = BuildWriteParameter(request);
         var dataBytes = BuildWriteData(request);
 
-        var headerBytes = BuildHeader(0x01, _pduReference, (ushort)parameterBytes.Length, (ushort)dataBytes.Length);
+        var headerBytes = BuildHeader(0x01, pduRef, (ushort)parameterBytes.Length, (ushort)dataBytes.Length);
 
         var result = new byte[headerBytes.Length + parameterBytes.Length + dataBytes.Length];
         Buffer.BlockCopy(headerBytes, 0, result, 0, headerBytes.Length);

@@ -102,7 +102,6 @@ public class MqttChannel : CommunicationChannelBase
     private readonly ConcurrentDictionary<string, Task> _subscribeTasks;
     private readonly ConcurrentDictionary<string, List<byte[]>> _messageQueues;
     private CancellationTokenSource? _cancellationTokenSource;
-    private bool _isConnecting;
 
     public event EventHandler<MqttMessageEventArgs>? MessageReceived;
 
@@ -151,7 +150,14 @@ public class MqttChannel : CommunicationChannelBase
 
         foreach (var kvp in _subscribeTasks)
         {
-            // 等待订阅任务完成
+            try
+            {
+                await kvp.Value.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Error waiting for subscribe task on topic {kvp.Key}: {ex.Message}");
+            }
         }
         _subscribeTasks.Clear();
 

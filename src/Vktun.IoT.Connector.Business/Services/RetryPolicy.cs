@@ -51,13 +51,11 @@ public class RetryPolicy
 {
     private readonly RetryPolicyConfig _config;
     private readonly ILogger _logger;
-    private readonly Random _random;
 
     public RetryPolicy(RetryPolicyConfig config, ILogger logger)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _random = new Random();
     }
 
     /// <summary>
@@ -124,7 +122,7 @@ public class RetryPolicy
         if (_config.EnableJitter)
         {
             var jitterRange = cappedDelay * 0.25;
-            var jitter = _random.NextDouble() * jitterRange * 2 - jitterRange;
+            var jitter = Random.Shared.NextDouble() * jitterRange * 2 - jitterRange;
             cappedDelay += jitter;
         }
 

@@ -6,16 +6,18 @@ namespace Vktun.IoT.Connector.Business.Providers;
 
 public class DataCache : IDataCache
 {
-    private readonly ConcurrentQueue<DeviceData> _cache;
+    private readonly ConcurrentDictionary<string, DeviceData> _cacheByDeviceId;
+    private readonly ConcurrentQueue<DeviceData> _orderedCache;
     private readonly object _lockObject = new();
 
-    public int Count => _cache.Count;
+    public int Count => _cacheByDeviceId.Count;
     public long MaxSize { get; set; }
     public bool IsFull => Count >= MaxSize;
 
     public DataCache(long maxSize = 10000)
     {
-        _cache = new ConcurrentQueue<DeviceData>();
+        _cacheByDeviceId = new ConcurrentDictionary<string, DeviceData>();
+        _orderedCache = new ConcurrentQueue<DeviceData>();
         MaxSize = maxSize;
     }
 
@@ -23,11 +25,23 @@ public class DataCache : IDataCache
     {
         lock (_lockObject)
         {
-            if (IsFull)
+            if (IsFull && !_cacheByDeviceId.ContainsKey(data.DeviceId))
             {
-                _cache.TryDequeue(out _);
+                if (_orderedCache.TryDequeue(out var oldest))
+                {
+                    _cacheByDeviceId.TryRemove(oldest.DeviceId, out _);
+                }
             }
-            _cache.Enqueue(data);
+
+            if (_cacheByDeviceId.TryGetValue(data.DeviceId, out var existing))
+            {
+                _cacheByDeviceId[data.DeviceId] = data;
+            }
+            else
+            {
+                _cacheByDeviceId[data.DeviceId] = data;
+                _orderedCache.Enqueue(data);
+            }
         }
     }
 
@@ -41,36 +55,30 @@ public class DataCache : IDataCache
 
     public DeviceData? Get(string deviceId)
     {
-        return _cache.FirstOrDefault(d => d.DeviceId == deviceId);
+        _cacheByDeviceId.TryGetValue(deviceId, out var data);
+        return data;
     }
 
     public IEnumerable<DeviceData> GetAll()
     {
-        return _cache.ToArray();
+        return _cacheByDeviceId.Values.ToArray();
     }
 
     public IEnumerable<DeviceData> GetByDevice(string deviceId)
     {
-        return _cache.Where(d => d.DeviceId == deviceId);
+        _cacheByDeviceId.TryGetValue(deviceId, out var data);
+        return data != null ? new[] { data } : Array.Empty<DeviceData>();
     }
 
     public bool Remove(string deviceId)
     {
-        var items = _cache.Where(d => d.DeviceId == deviceId).ToList();
-        if (items.Count == 0) return false;
-
-        var newCache = new ConcurrentQueue<DeviceData>(_cache.Where(d => d.DeviceId != deviceId));
-        _cache.Clear();
-        foreach (var item in newCache)
-        {
-            _cache.Enqueue(item);
-        }
-        return true;
+        return _cacheByDeviceId.TryRemove(deviceId, out _);
     }
 
     public void Clear()
     {
-        _cache.Clear();
+        _cacheByDeviceId.Clear();
+        while (_orderedCache.TryDequeue(out _)) { }
     }
 }
 

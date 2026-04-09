@@ -70,7 +70,7 @@ public class RetryPolicyTests
         int callCount = 0;
 
         // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<TimeoutException>(async () =>
         {
             await policy.ExecuteAsync(async (ct) =>
             {

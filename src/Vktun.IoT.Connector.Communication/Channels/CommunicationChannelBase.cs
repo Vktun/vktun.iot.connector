@@ -96,7 +96,7 @@ public abstract class CommunicationChannelBase : ICommunicationChannel
 
     public virtual void Dispose()
     {
-        DisposeAsync().AsTask().Wait();
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
 

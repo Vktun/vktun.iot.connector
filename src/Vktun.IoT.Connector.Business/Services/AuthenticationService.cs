@@ -109,7 +109,7 @@ public class AuthenticationService : IAuthenticationProvider, IDisposable
         // 检查是否过期
         if (credential.ExpiryDate.HasValue && credential.ExpiryDate.Value < DateTime.UtcNow)
         {
-            _logger.Warning($"API Key expired: {credential.Description}");
+            _logger.Warning($"API Key expired");
             return AuthenticationResult.CreateFailure("API Key expired");
         }
 
@@ -119,7 +119,7 @@ public class AuthenticationService : IAuthenticationProvider, IDisposable
             return AuthenticationResult.CreateFailure("API Key is disabled");
         }
 
-        _logger.Info($"Authentication successful with API Key: {credential.Description}");
+        _logger.Info($"Authentication successful with API Key");
         return AuthenticationResult.CreateSuccess(
             credential.AllowedDevices.FirstOrDefault() ?? "authenticated",
             GenerateSessionToken());
@@ -140,15 +140,29 @@ public class AuthenticationService : IAuthenticationProvider, IDisposable
     /// </summary>
     private Task<AuthenticationResult> AuthenticateByTokenAsync(Dictionary<string, string>? credentials)
     {
-        throw new NotImplementedException("Token authentication not implemented");
+        _logger.Warning("Token authentication is not yet implemented");
+        return Task.FromResult(AuthenticationResult.CreateFailure("Token authentication is not supported yet"));
     }
 
     /// <summary>
     /// 验证设备权限
     /// </summary>
-    public Task<bool> AuthorizeAsync(string deviceId, string resource)
+    public Task<bool> AuthorizeAsync(string deviceId, string resource, string? authenticatedIdentity = null)
     {
-        // 简单实现：检查API Key是否允许访问该设备
+        if (!string.IsNullOrEmpty(authenticatedIdentity))
+        {
+            if (_apiKeys.TryGetValue(authenticatedIdentity, out var credential))
+            {
+                if (credential.AllowedDevices.Count == 0 || credential.AllowedDevices.Contains(deviceId))
+                {
+                    return Task.FromResult(true);
+                }
+            }
+
+            _logger.Warning($"Device {deviceId} is not authorized for identity to access {resource}");
+            return Task.FromResult(false);
+        }
+
         foreach (var kvp in _apiKeys)
         {
             var credential = kvp.Value;

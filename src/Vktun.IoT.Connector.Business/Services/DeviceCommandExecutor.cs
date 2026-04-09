@@ -1,9 +1,10 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using Vktun.IoT.Connector.Communication.Factories;
+using Vktun.IoT.Connector.Business.Factories;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
+using Vktun.IoT.Connector.Core.Utils;
 using Vktun.IoT.Connector.Protocol.Factories;
 using Vktun.IoT.Connector.Protocol.Parsers;
 
@@ -37,6 +38,15 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         {
             return true;
         }
+
+        var validation = ConnectionSettingsValidator.ValidateAndNormalize(device);
+        if (!validation.IsValid || validation.Settings == null)
+        {
+            _logger.Warning($"Device {device.DeviceId} has invalid connection settings: {validation.ErrorMessage}");
+            return false;
+        }
+
+        ConnectionSettingsValidator.ApplyNormalizedSettings(device, validation.Settings);
 
         var protocolConfig = await GetProtocolConfigAsync(device, cancellationToken).ConfigureAwait(false);
         if (protocolConfig == null)

@@ -4,12 +4,20 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <IsPackable>true</IsPackable>
+    <PackageId>Vktun.IoT.Connector</PackageId>
+    <Version>0.0.1</Version>
+    <Description>Vktun IoT Connector - 设备连接 SDK，支持 Modbus RTU/TCP 协议</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />
-    <ProjectReference Include="..\Vktun.IoT.Connector.Business\Vktun.IoT.Connector.Business.csproj" />
-    <ProjectReference Include="..\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />
+    <ProjectReference Include="..\Vktun.IoT.Connector.Business\Vktun.IoT.Connector.Business.csproj">
+      <PrivateAssets>all</PrivateAssets>
+    </ProjectReference>
+    <ProjectReference Include="..\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj">
+      <PrivateAssets>all</PrivateAssets>
+    </ProjectReference>
   </ItemGroup>
 
 </Project>

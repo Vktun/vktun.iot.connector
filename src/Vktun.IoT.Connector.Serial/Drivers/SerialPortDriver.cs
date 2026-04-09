@@ -145,8 +145,8 @@ public class SerialPortDriver : ISerialPortDriver
                 NativeMethods.WriteFile(_handle, data, (uint)count, out bytesWritten, IntPtr.Zero);
                 return (int)bytesWritten;
             }
-            
-            return await Task.FromResult(count);
+
+            throw new PlatformNotSupportedException("Serial port is only supported on Windows");
         }
         catch (Exception ex)
         {
@@ -170,8 +170,8 @@ public class SerialPortDriver : ISerialPortDriver
                 NativeMethods.ReadFile(_handle, buffer, (uint)count, out bytesRead, IntPtr.Zero);
                 return (int)bytesRead;
             }
-            
-            return await Task.FromResult(0);
+
+            throw new PlatformNotSupportedException("Serial port is only supported on Windows");
         }
         catch (Exception ex)
         {

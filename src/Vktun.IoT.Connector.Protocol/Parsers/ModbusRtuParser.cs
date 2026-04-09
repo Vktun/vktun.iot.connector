@@ -255,8 +255,9 @@ public class ModbusRtuParser : IProtocolParser
             var numericValue = Convert.ToDouble(value);
             return numericValue * ratio + offset;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.Warning($"Failed to convert value '{value}' with ratio={ratio}, offset={offset}: {ex.Message}");
             return 0;
         }
     }

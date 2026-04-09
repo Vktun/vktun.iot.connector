@@ -1,0 +1,152 @@
+<UserControl x:Class="Vktun.IoT.Connector.Client.Views.SocketDebugView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prism="http://prismlibrary.com/"
+             prism:ViewModelLocator.AutoWireViewModel="True"
+             Padding="10">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <GroupBox Grid.Row="0" Header="Socket Connection" Style="{StaticResource CardGroupBox}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="120"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="Type:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox Grid.Column="1"
+                          ItemsSource="{Binding CommunicationTypes}"
+                          SelectedItem="{Binding SelectedCommunicationType}"
+                          Style="{StaticResource InputComboBox}"/>
+
+                <TextBlock Grid.Column="2" Text="Mode:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox Grid.Column="3"
+                          ItemsSource="{Binding ConnectionModes}"
+                          SelectedItem="{Binding SelectedConnectionMode}"
+                          Style="{StaticResource InputComboBox}"/>
+
+                <TextBlock Grid.Column="4" Text="Remote IP:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Grid.Column="5"
+                         Text="{Binding IpAddress, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource InputTextBox}"/>
+
+                <TextBlock Grid.Column="6" Text="Remote Port:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Grid.Column="7"
+                         Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource InputTextBox}"/>
+
+                <TextBlock Grid.Column="8" Text="Local IP:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Grid.Column="9"
+                         Text="{Binding LocalIpAddress, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource InputTextBox}"/>
+
+                <TextBlock Grid.Column="10" Text="Local Port:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Grid.Column="11"
+                         Text="{Binding LocalPort, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource InputTextBox}"/>
+
+                <StackPanel Grid.Column="12" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Connect"
+                            Command="{Binding ConnectCommand}"
+                            Style="{StaticResource PrimaryButton}" Width="80"/>
+                    <Button Content="Disconnect"
+                            Command="{Binding DisconnectCommand}"
+                            Style="{StaticResource SecondaryButton}" Width="80"/>
+                </StackPanel>
+            </Grid>
+        </GroupBox>
+
+        <GroupBox Grid.Row="1" Header="Send" Style="{StaticResource CardGroupBox}" Margin="10,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBox Grid.Column="0"
+                         Text="{Binding SendPayload, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource InputTextBox}" Margin="5,5,10,5"/>
+
+                <CheckBox Grid.Column="1"
+                          Content="HEX"
+                          IsChecked="{Binding IsHexMode}"
+                          VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                <TextBlock Grid.Column="2"
+                           Text="Timeout(ms):"
+                           VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <TextBox Grid.Column="3"
+                         Text="{Binding Timeout, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource InputTextBox}" Width="80" Margin="0,0,10,0"/>
+
+                <TextBlock Grid.Column="4"
+                           Text="Interval(ms):"
+                           VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <TextBox Grid.Column="5"
+                         Text="{Binding SendInterval, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource InputTextBox}" Width="80" Margin="0,0,10,0"/>
+
+                <CheckBox Grid.Column="6"
+                          Content="Auto"
+                          IsChecked="{Binding AutoSend}"
+                          VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                <Button Grid.Column="7"
+                        Content="Send"
+                        Command="{Binding SendCommand}"
+                        Style="{StaticResource PrimaryButton}" Width="80"/>
+            </Grid>
+        </GroupBox>
+
+        <GroupBox Grid.Row="2" Header="Socket Logs" Style="{StaticResource CardGroupBox}" Margin="10,0,10,10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBox Grid.Row="0"
+                         Text="{Binding LogMessages}"
+                         IsReadOnly="True"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto"
+                         TextWrapping="Wrap"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         Background="#F5F5F5"/>
+
+                <Button Grid.Row="1"
+                        Content="Clear"
+                        Command="{Binding ClearLogCommand}"
+                        Style="{StaticResource SecondaryButton}"
+                        Width="80"
+                        HorizontalAlignment="Right"
+                        Margin="0,8,0,0"/>
+            </Grid>
+        </GroupBox>
+    </Grid>
+</UserControl>
+

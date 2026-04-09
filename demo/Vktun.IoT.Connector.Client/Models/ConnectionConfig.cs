@@ -5,10 +5,16 @@ namespace Vktun.IoT.Connector.Client.Models;
 public class ConnectionConfig
 {
     public ProtocolType ProtocolType { get; set; }
+    public CommunicationType CommunicationType { get; set; } = CommunicationType.Tcp;
+    public ConnectionMode ConnectionMode { get; set; } = ConnectionMode.Client;
     public string ConnectionName { get; set; } = string.Empty;
     public string IpAddress { get; set; } = "127.0.0.1";
     public int Port { get; set; } = 502;
+    public string LocalIpAddress { get; set; } = string.Empty;
+    public int LocalPort { get; set; }
     public int Timeout { get; set; } = 3000;
+    public int SendInterval { get; set; } = 1000;
+    public bool AutoSend { get; set; } = false;
     
     public string PortName { get; set; } = "COM1";
     public int BaudRate { get; set; } = 9600;

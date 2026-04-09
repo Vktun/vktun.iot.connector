@@ -12,11 +12,12 @@
 
   <ItemGroup>
     <PackageReference Include="Prism.DryIoc" Version="9.0.537" />
-    <PackageReference Include="System.IO.Ports" Version="10.0.5" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.*" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />
+    <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Communication\Vktun.IoT.Connector.Communication.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Protocol\Vktun.IoT.Connector.Protocol.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Serial\Vktun.IoT.Connector.Serial.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />

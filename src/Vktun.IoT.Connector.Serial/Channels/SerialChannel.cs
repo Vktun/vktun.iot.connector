@@ -243,6 +243,22 @@ public class SerialChannel : SerialChannelBase
             _ => DriverStopBits.One
         };
     }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await CloseAsync();
+
+        if (_serialPortDriver is IAsyncDisposable asyncDisposable)
+        {
+            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+        }
+        else if (_serialPortDriver is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+
+        await base.DisposeAsync();
+    }
 }
 
 public enum Parity

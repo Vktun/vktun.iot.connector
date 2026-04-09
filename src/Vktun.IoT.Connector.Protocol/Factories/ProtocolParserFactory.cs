@@ -73,5 +73,8 @@ public class ProtocolParserFactory : IProtocolParserFactory
         RegisterParser(new ModbusTcpParser(_logger));
         RegisterParser(new S7ProtocolParser(_logger));
         RegisterParser(new IEC104ProtocolParser(_logger));
+        RegisterParser(new BacnetProtocolParser(_logger));
+        RegisterParser(new OpcUaProtocolParser(_logger));
+        RegisterParser(new CanopenProtocolParser(_logger));
     }
 }

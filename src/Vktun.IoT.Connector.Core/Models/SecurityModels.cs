@@ -146,6 +146,16 @@ public class TlsConfig
     /// 加密套件（为空则使用系统默认）
     /// </summary>
     public List<string> CipherSuites { get; set; } = new();
+
+    /// <summary>
+    /// 是否允许不安全的证书（仅用于开发环境，默认 false）
+    /// </summary>
+    public bool AllowInsecureCertificate { get; set; } = false;
+
+    /// <summary>
+    /// 是否检查证书吊销状态（默认 true）
+    /// </summary>
+    public bool CheckCertificateRevocation { get; set; } = true;
 }
 
 /// <summary>

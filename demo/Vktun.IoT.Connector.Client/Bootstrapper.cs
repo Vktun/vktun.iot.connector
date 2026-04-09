@@ -17,6 +17,7 @@ public class Bootstrapper : PrismBootstrapper
     {
         containerRegistry.RegisterSingleton<IProtocolTestService, ProtocolTestService>();
         containerRegistry.RegisterSingleton<IConnectionService, ConnectionService>();
+        containerRegistry.RegisterSingleton<ISocketTestService, SocketTestService>();
         
         containerRegistry.RegisterForNavigation<ModbusTcpView>();
         containerRegistry.RegisterForNavigation<ModbusRtuView>();
@@ -24,5 +25,6 @@ public class Bootstrapper : PrismBootstrapper
         containerRegistry.RegisterForNavigation<MitsubishiView>();
         containerRegistry.RegisterForNavigation<OmronView>();
         containerRegistry.RegisterForNavigation<SerialPortView>();
+        containerRegistry.RegisterForNavigation<SocketDebugView>();
     }
 }
