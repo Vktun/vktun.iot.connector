@@ -7,8 +7,64 @@
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector</PackageId>
     <Version>0.0.1</Version>
-    <Description>Vktun IoT Connector - 设备连接 SDK，支持 Modbus RTU/TCP 协议</Description>
+    <Authors>Vktun</Authors>
+    <Description>Vktun IoT Connector - 完整的 IoT 设备连接 SDK，支持多种工业协议和通信方式，提供设备管理、数据采集、云端连接等一站式解决方案。
+
+主要功能：
+- 设备管理：设备的注册、连接、断开、状态监控
+- 数据采集：从设备采集数据并解析为结构化数据
+- 命令执行：向设备发送命令并接收响应
+- 会话管理：设备会话的创建、维护、清理
+- 心跳检测：设备在线状态监控和心跳维护
+- 资源监控：系统资源使用情况监控
+- 云端连接：支持 Azure IoT Hub 和 AWS IoT Core
+- 任务调度：异步任务的调度和执行
+
+支持的协议：
+- Modbus RTU/TCP：工业标准协议
+- S7：西门子 PLC 协议
+- IEC104：电力行业远动协议
+- OPC UA：工业通信标准
+- BACnet：楼宇自动化协议
+- CANopen：CAN 总线高层协议
+- 自定义协议：支持用户自定义协议
+
+支持的通信方式：
+- TCP/UDP：网络通信
+- 串口：RS232/RS485
+- MQTT：消息队列
+
+使用方式：
+1. 安装 NuGet 包：dotnet add package Vktun.IoT.Connector
+2. 创建 IoTDataCollector 实例
+3. 初始化并启动 SDK
+4. 添加设备并开始数据采集
+
+示例代码：
+var collector = new IoTDataCollector(
+    deviceManager, sessionManager, taskScheduler,
+    resourceMonitor, configProvider, dataProvider,
+    heartbeatManager, logger);
+
+await collector.InitializeAsync(config);
+await collector.StartAsync();
+
+await collector.AddDeviceAsync(new DeviceInfo
+{
+    DeviceId = "device-001",
+    ProtocolType = ProtocolType.ModbusRtu,
+    ChannelId = "serial-1"
+});
+
+var data = await collector.CollectDataAsync("device-001");</Description>
+    <PackageTags>IoT;Connector;SDK;Modbus;IEC104;S7;OPCUA;BACnet;Industrial;Automation;DeviceManagement;DataCollection;AzureIoTHub;AWSIoT</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />

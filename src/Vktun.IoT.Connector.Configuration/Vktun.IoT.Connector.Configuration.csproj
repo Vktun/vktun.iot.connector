@@ -4,8 +4,45 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
+    <PackageId>Vktun.IoT.Connector.Configuration</PackageId>
+    <Version>0.0.1</Version>
+    <Authors>Vktun</Authors>
+    <Description>Vktun IoT Connector Configuration - 配置管理组件，提供日志配置、证书管理、JSON 配置提供程序等功能。
+
+主要功能：
+- JSON 配置提供者（JsonConfigurationProvider）：从 JSON 文件加载和保存 SDK 配置
+- 日志配置（LogConfiguration）：灵活的日志级别和输出配置
+- Serilog 日志器（SerilogLogger）：基于 Serilog 的日志实现，支持控制台和文件输出
+- 证书管理器（CertificateManager）：SSL/TLS 证书的加载和管理
+- 配置变更通知：配置更新时触发事件通知
+- 协议模板管理：加载和保存工业协议配置模板
+
+支持的配置类型：
+- 全局配置（GlobalConfig）：最大连接数、缓冲区大小、超时等
+- TCP 配置（TcpConfig）：TCP 通信参数
+- UDP 配置（UdpConfig）：UDP 通信参数
+- 串口配置（SerialConfig）：串口通信参数
+- 无线配置（WirelessConfig）：无线通信参数
+- 线程池配置（ThreadPoolConfig）：线程池参数
+- 资源配置（ResourceConfig）：资源监控参数
+
+使用方式：
+1. 安装 NuGet 包：dotnet add package Vktun.IoT.Connector.Configuration
+2. 创建配置提供者实例
+3. 加载或保存配置
+
+示例代码：
+var logger = new SerilogLogger(new LogConfiguration());
+var configProvider = new JsonConfigurationProvider(logger, "config.json");
+var config = await configProvider.LoadConfigAsync("config.json");</Description>
+    <PackageTags>IoT;Connector;Configuration;Logging;Certificate;Serilog;JSON;Settings</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="false" Condition="Exists('README.md')" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />

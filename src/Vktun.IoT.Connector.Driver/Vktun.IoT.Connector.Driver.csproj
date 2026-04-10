@@ -4,7 +4,43 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
+    <PackageId>Vktun.IoT.Connector.Driver</PackageId>
+    <Version>0.0.1</Version>
+    <Authors>Vktun</Authors>
+    <Description>Vktun IoT Connector Driver - 底层驱动组件库，提供 Socket 和网络通信的底层驱动实现。
+
+主要功能：
+- Socket 驱动接口（ISocketDriver）：统一的 Socket 驱动抽象接口
+- TCP Socket 驱动（TcpSocketDriver）：TCP 协议的 Socket 实现
+- UDP Socket 驱动（UdpSocketDriver）：UDP 协议的 Socket 实现
+- 连接管理：连接、断开、重连等操作
+- 数据收发：异步的发送和接收操作
+- Socket 选项配置：缓冲区大小、超时、NoDelay 等选项
+
+核心特性：
+- 异步优先：所有操作都是异步的，避免阻塞
+- 高性能：基于 .NET Socket 的高性能实现
+- 可配置：缓冲区大小、超时等参数可配置
+- 错误处理：完善的异常处理和日志记录
+- 资源管理：实现了 IAsyncDisposable，支持资源释放
+
+支持的协议：
+- TCP：面向连接的可靠传输
+- UDP：无连接的数据报传输
+
+使用方式：
+1. 安装 NuGet 包：dotnet add package Vktun.IoT.Connector.Driver
+2. 创建 Socket 驱动实例
+3. 连接远程端点并进行数据收发
+
+示例代码：
+var driver = new TcpSocketDriver(configProvider, logger);
+await driver.ConnectAsync(remoteEndPoint);
+await driver.SendAsync(data);
+var received = await driver.ReceiveAsync(buffer);</Description>
+    <PackageTags>IoT;Connector;Driver;Socket;TCP;UDP;Network;Communication;Async</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>

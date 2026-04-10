@@ -236,6 +236,37 @@ await collector.ConnectDeviceAsync(device.DeviceId);
 var data = await collector.CollectDataAsync(device.DeviceId);
 ```
 
+## 客户端工具
+
+SDK 包含一个功能完善的客户端测试工具，用于工业协议测试和调试。
+
+### 支持的协议
+
+- **Modbus RTU** - 串口 Modbus 协议测试
+- **Modbus TCP** - TCP Modbus 协议测试  
+- **西门子 S7** - 西门子 PLC S7 协议测试
+- **三菱** - 三菱 PLC 协议测试
+- **欧姆龙** - 欧姆龙 PLC 协议测试
+- **串口调试** - 通用串口通信测试
+
+### 客户端截图
+
+#### Modbus RTU 客户端
+
+![Modbus RTU 客户端](docs/modubsrtu.png)
+
+#### 西门子 S7 客户端
+
+![西门子 S7 客户端](docs/s7.png)
+
+### 功能特性
+
+- 实时数据监控与可视化
+- 协议配置与测试
+- 连接状态监控
+- 数据记录与分析
+- 单一界面支持多协议
+
 ## 项目依赖关系
 
 ```

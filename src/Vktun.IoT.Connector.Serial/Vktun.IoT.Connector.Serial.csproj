@@ -4,8 +4,46 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
+    <PackageId>Vktun.IoT.Connector.Serial</PackageId>
+    <Version>0.0.1</Version>
+    <Authors>Vktun</Authors>
+    <Description>Vktun IoT Connector Serial - 串口通信组件库，提供完整的串口通信功能，支持 RS232/RS485 等串行通信接口。
+
+主要功能：
+- 串口通道（SerialChannel）：实现 ICommunicationChannel 接口的串口通信通道
+- 串口驱动（SerialPortDriver）：底层串口驱动，基于 Windows API 实现
+- 串口通道基类（SerialChannelBase）：串口通道的抽象基类
+- 多设备支持：单个串口可连接多个设备（如 RS485 总线）
+
+支持的串口参数：
+- 波特率（BaudRate）：300 ~ 115200+ bps
+- 数据位（DataBits）：5, 6, 7, 8
+- 校验位（Parity）：None, Odd, Even, Mark, Space
+- 停止位（StopBits）：1, 1.5, 2
+- 超时设置：读写超时可配置
+
+平台支持：
+- Windows：基于 Win32 API 实现
+- 跨平台：可扩展支持 Linux/macOS
+
+使用方式：
+1. 安装 NuGet 包：dotnet add package Vktun.IoT.Connector.Serial
+2. 创建串口通道实例，指定端口名和波特率
+3. 打开通道并连接设备
+
+示例代码：
+var channel = new SerialChannel("COM3", 9600, configProvider, logger);
+await channel.OpenAsync();
+await channel.ConnectDeviceAsync(device);
+await channel.SendAsync(device.DeviceId, data);</Description>
+    <PackageTags>IoT;Connector;Serial;SerialPort;RS232;RS485;COM;Communication;Hardware</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="false" Condition="Exists('README.md')" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />

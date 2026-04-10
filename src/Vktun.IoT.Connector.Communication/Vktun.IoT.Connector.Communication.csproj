@@ -4,8 +4,42 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
+    <PackageId>Vktun.IoT.Connector.Communication</PackageId>
+    <Version>0.0.1</Version>
+    <Authors>Vktun</Authors>
+    <Description>Vktun IoT Connector Communication - 通信通道实现库，提供多种通信协议的通道实现。
+
+主要功能：
+- TCP 客户端通道（TcpClientChannel）：TCP 客户端连接和数据收发
+- TCP 服务端通道（TcpServerChannel）：TCP 服务端监听和多客户端管理
+- UDP 通道（UdpChannel）：UDP 数据报通信
+- MQTT 通道（MqttChannel）：MQTT 3.1.1/5.0 协议支持，支持发布/订阅模式
+- 安全 TCP 通道（SecureTcpChannel）：SSL/TLS 加密的 TCP 通信
+- 通信通道基类（CommunicationChannelBase）：统一的通道抽象和事件管理
+- 通信通道工厂（CommunicationChannelFactory）：根据配置创建合适的通道实例
+
+支持的通信模式：
+- 客户端模式（Client）：主动连接远程设备
+- 服务端模式（Server）：监听端口等待设备连接
+
+使用方式：
+1. 安装 NuGet 包：dotnet add package Vktun.IoT.Connector.Communication
+2. 创建通信通道实例
+3. 打开通道并连接设备
+
+示例代码：
+var channel = new TcpClientChannel(configProvider, logger);
+await channel.OpenAsync();
+await channel.ConnectDeviceAsync(device);
+await channel.SendAsync(device.DeviceId, data);</Description>
+    <PackageTags>IoT;Connector;Communication;TCP;UDP;MQTT;SSL;TLS;Socket;Network</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="false" Condition="Exists('README.md')" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />

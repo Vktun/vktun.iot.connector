@@ -236,6 +236,37 @@ await collector.ConnectDeviceAsync(device.DeviceId);
 var data = await collector.CollectDataAsync(device.DeviceId);
 ```
 
+## Client Tool
+
+The SDK includes a comprehensive client testing tool for industrial protocol testing and debugging.
+
+### Supported Protocols
+
+- **Modbus RTU** - Serial Modbus protocol testing
+- **Modbus TCP** - TCP Modbus protocol testing  
+- **Siemens S7** - Siemens PLC S7 protocol testing
+- **Mitsubishi** - Mitsubishi PLC protocol testing
+- **Omron** - Omron PLC protocol testing
+- **Serial Port** - General serial communication testing
+
+### Client Screenshots
+
+#### Modbus RTU Client
+
+![Modbus RTU Client](docs/modubsrtu.png)
+
+#### Siemens S7 Client
+
+![Siemens S7 Client](docs/s7.png)
+
+### Features
+
+- Real-time data monitoring and visualization
+- Protocol configuration and testing
+- Connection status monitoring
+- Data logging and analysis
+- Multi-protocol support in single interface
+
 ## Project Dependencies
 
 ```

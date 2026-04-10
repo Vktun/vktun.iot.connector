@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -7,7 +7,39 @@
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Core</PackageId>
     <Version>0.0.1</Version>
-    <Description>Vktun IoT Connector Core - 基础接口和模型定义</Description>
+    <Authors>Vktun</Authors>
+    <Description>Vktun IoT Connector Core - IoT 设备连接核心库，提供基础接口定义、数据模型、枚举类型和工具类。
+
+主要功能：
+- 设备管理接口（IDeviceManager）：设备的添加、删除、连接、断开等操作
+- 通信通道接口（ICommunicationChannel）：统一的通信通道抽象
+- 协议解析接口（IProtocolParser）：工业协议解析抽象
+- 会话管理接口（ISessionManager）：设备会话生命周期管理
+- 任务调度接口（ITaskScheduler）：异步任务调度和执行
+- 资源监控接口（IResourceMonitor）：系统资源使用监控
+- 数据提供者接口（IDataProvider）：数据读写抽象
+- 配置模型：SDK 配置、设备配置、协议配置等数据模型
+
+使用方式：
+1. 安装 NuGet 包：dotnet add package Vktun.IoT.Connector.Core
+2. 实现核心接口以创建自定义的 IoT 连接器
+3. 使用提供的模型类定义设备信息和配置
+
+示例代码：
+var device = new DeviceInfo
+{
+    DeviceId = "device-001",
+    DeviceName = "温度传感器",
+    ProtocolType = ProtocolType.ModbusRtu,
+    ChannelId = "serial-1"
+};</Description>
+    <PackageTags>IoT;Connector;Core;Interface;Model;DeviceManagement;Industrial</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
 
 </Project>

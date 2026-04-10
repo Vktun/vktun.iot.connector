@@ -4,11 +4,46 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
+    <IsPackable>true</IsPackable>
+    <PackageId>Vktun.IoT.Connector.Concurrency</PackageId>
+    <Version>0.0.1</Version>
+    <Authors>Vktun</Authors>
+    <Description>Vktun IoT Connector Concurrency - 并发处理组件库，提供高性能的异步队列、任务调度和资源监控功能。
+
+主要功能：
+- 异步队列（AsyncQueue）：基于 Channel 的高性能异步队列，支持多生产者多消费者
+- 优先级队列（PriorityAsyncQueue）：支持优先级排序的异步队列
+- 任务调度器（TaskScheduler）：设备命令的异步调度和执行，支持优先级和并发控制
+- 资源监控器（ResourceMonitor）：实时监控系统资源使用情况（CPU、内存、句柄等）
+- 并发控制：信号量、锁、原子操作等并发控制机制
+
+核心特性：
+- 线程安全：所有组件都是线程安全的
+- 高性能：基于 .NET Channel 和高性能并发集合
+- 异步优先：全面支持 async/await 模式
+- 可配置：队列容量、线程池大小、资源阈值等可配置
+- 事件驱动：任务完成、失败、资源超限等事件通知
+
+使用方式：
+1. 安装 NuGet 包：dotnet add package Vktun.IoT.Connector.Concurrency
+2. 创建任务调度器或队列实例
+3. 提交任务或使用队列进行数据传递
+
+示例代码：
+var scheduler = new TaskScheduler(configProvider, deviceManager, executor, logger);
+await scheduler.StartAsync();
+var taskId = await scheduler.SubmitTaskAsync(command);
+var result = await scheduler.GetTaskResultAsync(taskId);</Description>
+    <PackageTags>IoT;Connector;Concurrency;Async;TaskScheduler;ResourceMonitor;Queue;Threading;Performance</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.0-preview.1.25080.6" />
+    <None Include="README.md" Pack="false" Condition="Exists('README.md')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.5" />
   </ItemGroup>
 
   <ItemGroup>
