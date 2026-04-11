@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
@@ -11,6 +12,8 @@ public class TcpClientChannel : CommunicationChannelBase
 {
     private readonly ISocketDriver _socketDriver;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<byte[]>> _pendingResponses = new();
     private CancellationTokenSource? _receiveLoopCts;
 
     public override CommunicationType CommunicationType => CommunicationType.Tcp;
@@ -41,6 +44,12 @@ public class TcpClientChannel : CommunicationChannelBase
         _receiveLoopCts?.Dispose();
         _receiveLoopCts = null;
 
+        foreach (var pending in _pendingResponses.Values)
+        {
+            pending.TrySetCanceled();
+        }
+        _pendingResponses.Clear();
+
         var deviceIds = _connections.Keys.ToArray();
         foreach (var deviceId in deviceIds)
         {
@@ -62,6 +71,7 @@ public class TcpClientChannel : CommunicationChannelBase
             return 0;
         }
 
+        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var bytesSent = await _socketDriver.SendAsync(data, cancellationToken).ConfigureAwait(false);
@@ -71,12 +81,41 @@ public class TcpClientChannel : CommunicationChannelBase
                 connection.LastActiveTime = DateTime.Now;
             }
 
+            OnDataSent(deviceId, data.ToArray(), bytesSent);
             return bytesSent;
         }
         catch (Exception ex)
         {
             OnErrorOccurred(deviceId, $"Failed to send TCP data: {ex.Message}", ex);
             return 0;
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
+    }
+
+    public async Task<byte[]> SendAndReceiveAsync(string deviceId, byte[] data, int timeoutMs, CancellationToken cancellationToken = default)
+    {
+        var responseSource = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingResponses[deviceId] = responseSource;
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeoutMs);
+
+        try
+        {
+            var sent = await SendAsync(deviceId, data, timeoutCts.Token).ConfigureAwait(false);
+            if (sent <= 0)
+            {
+                throw new InvalidOperationException($"Failed to send data to device {deviceId}.");
+            }
+
+            return await responseSource.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            _pendingResponses.TryRemove(deviceId, out _);
         }
     }
 
@@ -158,6 +197,12 @@ public class TcpClientChannel : CommunicationChannelBase
         {
             connection.CancellationTokenSource?.Cancel();
             connection.CancellationTokenSource?.Dispose();
+
+            if (_pendingResponses.TryRemove(deviceId, out var pending))
+            {
+                pending.TrySetException(new InvalidOperationException($"Device {deviceId} disconnected."));
+            }
+
             await _socketDriver.DisconnectAsync().ConfigureAwait(false);
             OnDeviceDisconnected(deviceId, "Disconnected");
         }
@@ -183,6 +228,11 @@ public class TcpClientChannel : CommunicationChannelBase
                 {
                     connection.BytesReceived += bytesRead;
                     connection.LastActiveTime = DateTime.Now;
+                }
+
+                if (_pendingResponses.TryRemove(deviceId, out var pending))
+                {
+                    pending.TrySetResult(data);
                 }
 
                 OnDataReceived(deviceId, data);
@@ -214,6 +264,7 @@ public class TcpClientChannel : CommunicationChannelBase
         }
 
         _connectionLock.Dispose();
+        _sendLock.Dispose();
         await base.DisposeAsync();
     }
 }

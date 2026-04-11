@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Communication</PackageId>
-    <Version>0.0.1</Version>
+    <Version>0.0.2</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Communication - 通信通道实现库，提供多种通信协议的通道实现。
 

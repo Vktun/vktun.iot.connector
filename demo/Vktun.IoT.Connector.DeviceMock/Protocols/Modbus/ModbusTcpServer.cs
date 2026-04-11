@@ -31,7 +31,6 @@ public class ModbusTcpServer : TcpServerBase, IDeviceSimulator
     protected override async Task HandleClientAsync(TcpClient client)
     {
         var stream = client.GetStream();
-        var buffer = new byte[260];
         
         _logger.Info($"Modbus TCP客户端已连接: {client.Client.RemoteEndPoint}");
         
@@ -39,14 +38,27 @@ public class ModbusTcpServer : TcpServerBase, IDeviceSimulator
         {
             while (IsRunning && client.Connected)
             {
-                var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
-                if (bytesRead == 0)
+                var mbapHeader = await ReadExactAsync(stream, 6);
+                if (mbapHeader == null)
                 {
                     break;
                 }
                 
-                var request = new byte[bytesRead];
-                Array.Copy(buffer, 0, request, 0, bytesRead);
+                var length = (mbapHeader[4] << 8) | mbapHeader[5];
+                if (length <= 0 || length > 252)
+                {
+                    break;
+                }
+                
+                var pdu = await ReadExactAsync(stream, length);
+                if (pdu == null)
+                {
+                    break;
+                }
+                
+                var request = new byte[6 + length];
+                Array.Copy(mbapHeader, 0, request, 0, 6);
+                Array.Copy(pdu, 0, request, 6, length);
                 
                 var response = ProcessRequest(request);
                 if (response != null)
@@ -64,6 +76,25 @@ public class ModbusTcpServer : TcpServerBase, IDeviceSimulator
             RemoveClient(client);
             _logger.Info($"Modbus TCP客户端已断开: {client.Client.RemoteEndPoint}");
         }
+    }
+    
+    private static async Task<byte[]?> ReadExactAsync(NetworkStream stream, int count)
+    {
+        var buffer = new byte[count];
+        var totalRead = 0;
+        
+        while (totalRead < count)
+        {
+            var bytesRead = await stream.ReadAsync(buffer, totalRead, count - totalRead);
+            if (bytesRead == 0)
+            {
+                return null;
+            }
+            
+            totalRead += bytesRead;
+        }
+        
+        return buffer;
     }
     
     private byte[]? ProcessRequest(byte[] request)

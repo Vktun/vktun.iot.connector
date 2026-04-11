@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Vktun.IoT.Connector.Core.Enums;
@@ -197,6 +198,189 @@ public class JsonConfigurationProvider : IConfigurationProvider
         {
             _logger.Error($"Failed to save protocol template {filePath}: {ex.Message}", ex);
         }
+    }
+
+    public async Task<bool> ExportTemplateAsync(ProtocolConfig config, string exportPath)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(exportPath);
+            if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var exportData = new ProtocolTemplateExport
+            {
+                ExportTime = DateTime.Now,
+                ExportVersion = "1.0",
+                Config = config
+            };
+
+            var json = JsonSerializer.Serialize(exportData, JsonOptions);
+            await File.WriteAllTextAsync(exportPath, json).ConfigureAwait(false);
+            _logger.Info($"Protocol template exported to {exportPath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to export template: {ex.Message}", ex);
+            return false;
+        }
+    }
+
+    public async Task<ProtocolConfig?> ImportTemplateAsync(string importPath)
+    {
+        try
+        {
+            if (!File.Exists(importPath))
+            {
+                _logger.Warning($"Import file does not exist: {importPath}");
+                return null;
+            }
+
+            var json = await File.ReadAllTextAsync(importPath).ConfigureAwait(false);
+
+            ProtocolConfig? config;
+            var exportData = JsonSerializer.Deserialize<ProtocolTemplateExport>(json, JsonOptions);
+            if (exportData?.Config != null)
+            {
+                config = exportData.Config;
+            }
+            else
+            {
+                config = BuildProtocolConfig(json, importPath);
+            }
+
+            if (config != null)
+            {
+                var validation = config.Validate();
+                if (!validation.IsValid)
+                {
+                    _logger.Warning($"Imported template has validation errors: {string.Join(", ", validation.Errors)}");
+                }
+
+                config.TemplateSource = importPath;
+                _logger.Info($"Protocol template imported from {importPath}");
+            }
+
+            return config;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to import template: {ex.Message}", ex);
+            return null;
+        }
+    }
+
+    public async Task<ProtocolTemplateVersion?> GetTemplateVersionAsync(string filePath)
+    {
+        try
+        {
+            if (!File.Exists(filePath))
+            {
+                return null;
+            }
+
+            var fileInfo = new FileInfo(filePath);
+            var json = await File.ReadAllTextAsync(filePath).ConfigureAwait(false);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            return new ProtocolTemplateVersion
+            {
+                FilePath = filePath,
+                ConfigVersion = root.TryGetProperty("ConfigVersion", out var v) ? v.GetInt32() : 1,
+                ProtocolVersion = root.TryGetProperty("ProtocolVersion", out var pv) && pv.ValueKind == JsonValueKind.String ? pv.GetString() ?? "1.0.0" : "1.0.0",
+                LastModified = fileInfo.LastWriteTimeUtc,
+                FileSize = fileInfo.Length
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Failed to get template version: {ex.Message}", ex);
+            return null;
+        }
+    }
+
+    public async Task StartTemplateWatchAsync(string templatesDirectory, CancellationToken cancellationToken = default)
+    {
+        if (!Directory.Exists(templatesDirectory))
+        {
+            _logger.Warning($"Template directory does not exist: {templatesDirectory}");
+            return;
+        }
+
+        _logger.Info($"Starting template watch on {templatesDirectory}");
+
+        using var watcher = new FileSystemWatcher(templatesDirectory)
+        {
+            Filter = "*.json",
+            IncludeSubdirectories = true,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size
+        };
+
+        var changed = new SemaphoreSlim(0, 1);
+        var changedFiles = new ConcurrentBag<string>();
+
+        watcher.Changed += (_, e) => { changedFiles.Add(e.FullPath); changed.Release(); };
+        watcher.Created += (_, e) => { changedFiles.Add(e.FullPath); changed.Release(); };
+        watcher.Deleted += (_, e) => { changedFiles.Add(e.FullPath); changed.Release(); };
+        watcher.Renamed += (_, e) => { changedFiles.Add(e.OldFullPath); changed.Release(); };
+
+        watcher.EnableRaisingEvents = true;
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await changed.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+                while (changedFiles.TryTake(out var filePath))
+                {
+                    _logger.Info($"Template file changed: {filePath}");
+                    ConfigChanged?.Invoke(this, new ConfigChangedEventArgs
+                    {
+                        Timestamp = DateTime.Now,
+                        AffectedFilePath = filePath
+                    });
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+
+        watcher.EnableRaisingEvents = false;
+    }
+
+    public ProtocolConfigValidationReport ValidateTemplate(ProtocolConfig config)
+    {
+        var result = config.Validate();
+        return new ProtocolConfigValidationReport
+        {
+            ProtocolId = config.ProtocolId,
+            ProtocolName = config.ProtocolName,
+            ProtocolType = config.ProtocolType,
+            IsValid = result.IsValid,
+            Errors = result.Errors,
+            Warnings = result.Warnings,
+            ValidatedAt = DateTime.Now
+        };
+    }
+
+    public async Task<List<ProtocolConfigValidationReport>> ValidateAllTemplatesAsync(string templatesDirectory)
+    {
+        var reports = new List<ProtocolConfigValidationReport>();
+        var templates = await LoadProtocolTemplatesAsync(templatesDirectory).ConfigureAwait(false);
+
+        foreach (var template in templates)
+        {
+            reports.Add(ValidateTemplate(template));
+        }
+
+        return reports;
     }
 
     private static string BuildProtocolJson(ProtocolConfig config)

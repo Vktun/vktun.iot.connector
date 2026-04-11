@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Protocol</PackageId>
-    <Version>0.0.1</Version>
+    <Version>0.0.2</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Protocol - 工业协议解析器库，支持多种主流工业通信协议的数据解析和打包。
 

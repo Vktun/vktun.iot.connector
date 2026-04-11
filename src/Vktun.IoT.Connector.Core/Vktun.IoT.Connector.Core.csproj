@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Core</PackageId>
-    <Version>0.0.1</Version>
+    <Version>0.0.2</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Core - IoT 设备连接核心库，提供基础接口定义、数据模型、枚举类型和工具类。
 

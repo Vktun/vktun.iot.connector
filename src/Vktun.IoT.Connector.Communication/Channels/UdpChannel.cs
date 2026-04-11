@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using Vktun.IoT.Connector.Core.Enums;
@@ -13,10 +14,13 @@ public class UdpChannel : CommunicationChannelBase
     private readonly IPAddress _localAddress;
     private readonly int _localPort;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
+    private readonly ConcurrentDictionary<string, UdpSession> _sessions = new();
+    private readonly TimeSpan _sessionTimeout;
 
     private Socket? _socket;
     private CancellationTokenSource? _lifetimeCts;
     private Task? _receiveLoopTask;
+    private Task? _sessionCleanupTask;
     private DeviceInfo? _expectedDevice;
     private IPAddress? _expectedRemoteAddress;
     private TaskCompletionSource<bool>? _pendingFirstPacketSource;
@@ -34,6 +38,7 @@ public class UdpChannel : CommunicationChannelBase
         _mode = mode;
         _localAddress = string.IsNullOrWhiteSpace(localIpAddress) ? IPAddress.Any : IPAddress.Parse(localIpAddress);
         _localPort = localPort;
+        _sessionTimeout = TimeSpan.FromMilliseconds(configProvider.GetConfig().Udp.DeviceOfflineTimeout);
         ChannelId = $"Udp_{mode}_{_localAddress}_{localPort}";
     }
 
@@ -64,6 +69,7 @@ public class UdpChannel : CommunicationChannelBase
 
             _isConnected = true;
             _receiveLoopTask = Task.Run(() => ReceiveLoopAsync(_lifetimeCts.Token), _lifetimeCts.Token);
+            _sessionCleanupTask = Task.Run(() => SessionCleanupLoopAsync(_lifetimeCts.Token), _lifetimeCts.Token);
             return Task.FromResult(true);
         }
         catch (Exception ex)
@@ -93,6 +99,8 @@ public class UdpChannel : CommunicationChannelBase
             await DisconnectDeviceAsync(deviceId).ConfigureAwait(false);
         }
 
+        _sessions.Clear();
+
         _socket?.Close();
         _socket?.Dispose();
         _socket = null;
@@ -108,9 +116,21 @@ public class UdpChannel : CommunicationChannelBase
             }
         }
 
+        if (_sessionCleanupTask != null)
+        {
+            try
+            {
+                await _sessionCleanupTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
         _lifetimeCts?.Dispose();
         _lifetimeCts = null;
         _receiveLoopTask = null;
+        _sessionCleanupTask = null;
 
         _logger.Info("UDP channel stopped.");
     }
@@ -132,6 +152,7 @@ public class UdpChannel : CommunicationChannelBase
             var bytesSent = await _socket.SendToAsync(data, SocketFlags.None, connection.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
             connection.BytesSent += bytesSent;
             connection.LastActiveTime = DateTime.Now;
+            OnDataSent(deviceId, data.ToArray(), bytesSent);
             return bytesSent;
         }
         catch (Exception ex)
@@ -193,6 +214,12 @@ public class UdpChannel : CommunicationChannelBase
                     LastActiveTime = DateTime.Now
                 };
                 _connections[device.DeviceId] = connection;
+                _sessions[device.DeviceId] = new UdpSession
+                {
+                    DeviceId = device.DeviceId,
+                    RemoteEndPoint = remoteEndPoint,
+                    LastActiveTime = DateTime.Now
+                };
 
                 OnDeviceConnected(device.DeviceId, device);
                 return true;
@@ -240,6 +267,7 @@ public class UdpChannel : CommunicationChannelBase
     public override Task DisconnectDeviceAsync(string deviceId)
     {
         _connections.TryRemove(deviceId, out _);
+        _sessions.TryRemove(deviceId, out _);
         OnDeviceDisconnected(deviceId, "Disconnected.");
         return Task.CompletedTask;
     }
@@ -271,7 +299,6 @@ public class UdpChannel : CommunicationChannelBase
 
                 if (_mode == ConnectionMode.Server && TryBindServerConnection(remoteEndPoint))
                 {
-                    // Bound expected device based on first matching datagram.
                 }
 
                 var deviceId = ResolveDeviceId(remoteEndPoint);
@@ -282,6 +309,13 @@ public class UdpChannel : CommunicationChannelBase
 
                 connection.BytesReceived += receiveResult.ReceivedBytes;
                 connection.LastActiveTime = DateTime.Now;
+
+                if (_sessions.TryGetValue(deviceId, out var session))
+                {
+                    session.LastActiveTime = DateTime.Now;
+                    session.PacketsReceived++;
+                }
+
                 OnDataReceived(deviceId, data);
             }
             catch (OperationCanceledException)
@@ -295,6 +329,34 @@ public class UdpChannel : CommunicationChannelBase
             catch (Exception ex)
             {
                 _logger.Error($"Failed to receive UDP data: {ex.Message}", ex);
+            }
+        }
+    }
+
+    private async Task SessionCleanupLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(_configProvider.GetConfig().Udp.HeartbeatCheckInterval, cancellationToken).ConfigureAwait(false);
+
+                var now = DateTime.Now;
+                var expiredSessions = _sessions.Where(s => now - s.Value.LastActiveTime > _sessionTimeout).ToList();
+
+                foreach (var expired in expiredSessions)
+                {
+                    _logger.Info($"UDP session for device {expired.Key} timed out (last active: {expired.Value.LastActiveTime}).");
+                    await DisconnectDeviceAsync(expired.Key).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error in UDP session cleanup: {ex.Message}", ex);
             }
         }
     }
@@ -320,6 +382,12 @@ public class UdpChannel : CommunicationChannelBase
             LastActiveTime = DateTime.Now
         };
         _connections[connection.DeviceId] = connection;
+        _sessions[connection.DeviceId] = new UdpSession
+        {
+            DeviceId = connection.DeviceId,
+            RemoteEndPoint = remoteEndPoint,
+            LastActiveTime = DateTime.Now
+        };
 
         var connectedDevice = CloneDevice(_expectedDevice);
         connectedDevice.IpAddress = remoteEndPoint.Address.ToString();
@@ -379,5 +447,14 @@ public class UdpChannel : CommunicationChannelBase
             ReconnectCount = device.ReconnectCount,
             ExtendedProperties = new Dictionary<string, object>(device.ExtendedProperties)
         };
+    }
+
+    private sealed class UdpSession
+    {
+        public string DeviceId { get; set; } = string.Empty;
+        public IPEndPoint? RemoteEndPoint { get; set; }
+        public DateTime LastActiveTime { get; set; }
+        public long PacketsReceived { get; set; }
+        public long PacketsSent { get; set; }
     }
 }

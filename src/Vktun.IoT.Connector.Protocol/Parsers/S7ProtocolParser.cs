@@ -14,6 +14,12 @@ public class S7ProtocolParser : IProtocolParser
 
     public ProtocolType Type => ProtocolType.S7;
     public string Name => "西门子S7协议解析器";
+    public string Version => "1.0.0";
+    public string Description => "西门子S7协议解析器";
+    public string Vendor => "Vktun";
+    public string[] SupportedDeviceModels => new[] { "S7-200", "S7-300", "S7-400", "S7-1200", "S7-1500" };
+    public string Author => "Vktun";
+    public ParserStatus Status => ParserStatus.Stable;
 
     public S7ProtocolParser(ILogger logger)
     {
@@ -435,6 +441,12 @@ public class S7ProtocolParser : IProtocolParser
     {
         try
         {
+            var definition = config.GetDefinition<S7Config>();
+            if (definition != null)
+            {
+                return definition;
+            }
+
             var s7Config = new S7Config
             {
                 ProtocolId = config.ProtocolId,

@@ -37,8 +37,8 @@ internal static class Program
             IpAddress = "127.0.0.1",
             Port = 502,
             ProtocolType = ProtocolType.ModbusTcp,
-            ProtocolId = "TemperatureHumiditySensor",
-            ProtocolConfigPath = Path.Combine(AppContext.BaseDirectory, "Protocols", "TemperatureHumiditySensor.json")
+            ProtocolId = "PLC_TemperatureHumidity_001",
+            ProtocolConfigPath = Path.Combine(AppContext.BaseDirectory, "Protocols", "PLC温湿度传感器协议.json")
         };
 
         await collector.AddDeviceAsync(modbusTcpDevice).ConfigureAwait(false);

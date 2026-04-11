@@ -17,5 +17,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Vktun.IoT.Connector.UnitTests/Vktun.IoT.Connector.UnitTests.csproj" />
+    <Project Path="tests/Vktun.IoT.Connector.ProtocolTests/Vktun.IoT.Connector.ProtocolTests.csproj" />
   </Folder>
 </Solution>

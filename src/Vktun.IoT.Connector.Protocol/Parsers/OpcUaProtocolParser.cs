@@ -101,6 +101,12 @@ public class OpcUaProtocolParser : IProtocolParser
 
     public ProtocolType Type => ProtocolType.Custom; // OPC UA暂归类为Custom
     public string Name => "OPC UA";
+    public string Version => "1.0.0";
+    public string Description => "OPC UA协议解析器";
+    public string Vendor => "Vktun";
+    public string[] SupportedDeviceModels => new[] { "*" };
+    public string Author => "Vktun";
+    public ParserStatus Status => ParserStatus.Experimental;
 
     public OpcUaProtocolParser(ILogger logger)
     {

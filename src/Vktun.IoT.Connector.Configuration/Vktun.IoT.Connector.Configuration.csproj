@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Configuration</PackageId>
-    <Version>0.0.1</Version>
+    <Version>0.0.2</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Configuration - 配置管理组件，提供日志配置、证书管理、JSON 配置提供程序等功能。
 

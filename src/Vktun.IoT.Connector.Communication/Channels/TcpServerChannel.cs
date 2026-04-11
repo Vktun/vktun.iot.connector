@@ -136,6 +136,7 @@ public class TcpServerChannel : CommunicationChannelBase
             var bytesSent = await connection.Socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
             connection.BytesSent += bytesSent;
             connection.LastActiveTime = DateTime.Now;
+            OnDataSent(deviceId, data.ToArray(), bytesSent);
             return bytesSent;
         }
         catch (Exception ex)

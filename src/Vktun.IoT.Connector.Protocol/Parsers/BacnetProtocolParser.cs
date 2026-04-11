@@ -51,6 +51,12 @@ public class BacnetProtocolParser : IProtocolParser
 
     public ProtocolType Type => ProtocolType.Custom;
     public string Name => "BACnet";
+    public string Version => "1.0.0";
+    public string Description => "BACnet/IP协议解析器";
+    public string Vendor => "Vktun";
+    public string[] SupportedDeviceModels => new[] { "*" };
+    public string Author => "Vktun";
+    public ParserStatus Status => ParserStatus.Experimental;
 
     private const byte BacnetConfirmedRequest = 0x00;
     private const byte BacnetUnconfirmedRequest = 0x10;

@@ -26,6 +26,8 @@
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Business\Vktun.IoT.Connector.Business.csproj" />
     <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Protocol\Vktun.IoT.Connector.Protocol.csproj" />
+    <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Concurrency\Vktun.IoT.Connector.Concurrency.csproj" />
+    <ProjectReference Include="..\..\src\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />
   </ItemGroup>
 
 </Project>

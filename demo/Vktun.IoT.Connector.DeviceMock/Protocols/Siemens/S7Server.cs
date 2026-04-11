@@ -29,7 +29,6 @@ public class S7Server : TcpServerBase, IDeviceSimulator
     protected override async Task HandleClientAsync(TcpClient client)
     {
         var stream = client.GetStream();
-        var buffer = new byte[2048];
         
         _logger.Info($"S7客户端已连接: {client.Client.RemoteEndPoint}");
         
@@ -37,14 +36,36 @@ public class S7Server : TcpServerBase, IDeviceSimulator
         {
             while (IsRunning && client.Connected)
             {
-                var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
-                if (bytesRead == 0)
+                var tpktHeader = await ReadExactAsync(stream, 4);
+                if (tpktHeader == null)
                 {
                     break;
                 }
                 
-                var request = new byte[bytesRead];
-                Array.Copy(buffer, 0, request, 0, bytesRead);
+                var tpktLength = (tpktHeader[2] << 8) | tpktHeader[3];
+                if (tpktLength < 4 || tpktLength > 2048)
+                {
+                    break;
+                }
+                
+                var remaining = tpktLength - 4;
+                byte[] request;
+                if (remaining > 0)
+                {
+                    var rest = await ReadExactAsync(stream, remaining);
+                    if (rest == null)
+                    {
+                        break;
+                    }
+                    
+                    request = new byte[tpktLength];
+                    Array.Copy(tpktHeader, 0, request, 0, 4);
+                    Array.Copy(rest, 0, request, 4, remaining);
+                }
+                else
+                {
+                    request = tpktHeader;
+                }
                 
                 var response = ProcessRequest(request);
                 if (response != null && response.Length > 0)
@@ -62,6 +83,25 @@ public class S7Server : TcpServerBase, IDeviceSimulator
             RemoveClient(client);
             _logger.Info($"S7客户端已断开: {client.Client.RemoteEndPoint}");
         }
+    }
+    
+    private static async Task<byte[]?> ReadExactAsync(NetworkStream stream, int count)
+    {
+        var buffer = new byte[count];
+        var totalRead = 0;
+        
+        while (totalRead < count)
+        {
+            var bytesRead = await stream.ReadAsync(buffer, totalRead, count - totalRead);
+            if (bytesRead == 0)
+            {
+                return null;
+            }
+            
+            totalRead += bytesRead;
+        }
+        
+        return buffer;
     }
     
     private byte[]? ProcessRequest(byte[] request)

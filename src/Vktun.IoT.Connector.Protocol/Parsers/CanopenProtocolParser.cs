@@ -82,6 +82,12 @@ public class CanopenProtocolParser : IProtocolParser
 
     public ProtocolType Type => ProtocolType.Custom;
     public string Name => "CANopen";
+    public string Version => "0.0.2";
+    public string Description => "CANopen协议解析器";
+    public string Vendor => "Vktun";
+    public string[] SupportedDeviceModels => new[] { "*" };
+    public string Author => "Vktun";
+    public ParserStatus Status => ParserStatus.Experimental;
 
     private const byte NmtInitializing = 0x00;
     private const byte NmtOperational = 0x05;

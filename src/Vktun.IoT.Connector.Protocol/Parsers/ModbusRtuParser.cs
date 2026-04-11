@@ -12,6 +12,12 @@ public class ModbusRtuParser : IProtocolParser
 
     public ProtocolType Type => ProtocolType.ModbusRtu;
     public string Name => "Modbus RTU协议解析器";
+    public string Version => "1.0.0";
+    public string Description => "Modbus RTU协议解析器";
+    public string Vendor => "Vktun";
+    public string[] SupportedDeviceModels => new[] { "*" };
+    public string Author => "Vktun";
+    public ParserStatus Status => ParserStatus.Stable;
 
     public ModbusRtuParser(ILogger logger)
     {
@@ -91,6 +97,12 @@ public class ModbusRtuParser : IProtocolParser
 
     private ModbusConfig? GetModbusConfig(ProtocolConfig config)
     {
+        var definition = config.GetDefinition<ModbusConfig>();
+        if (definition != null)
+        {
+            return definition;
+        }
+
         if (!config.ParseRules.TryGetValue("ModbusConfig", out var modbusJson))
         {
             return null;
@@ -268,8 +280,8 @@ public class ModbusRtuParser : IProtocolParser
         {
             SlaveId = config.SlaveId,
             FunctionCode = GetFunctionCode(command.CommandName),
-            StartAddress = (ushort)command.Parameters.GetValueOrDefault("Address", 0),
-            Quantity = (ushort)command.Parameters.GetValueOrDefault("Quantity", 1)
+            StartAddress = Convert.ToUInt16(command.Parameters.GetValueOrDefault("Address", 0)),
+            Quantity = Convert.ToUInt16(command.Parameters.GetValueOrDefault("Quantity", 1))
         };
         
         if (command.CommandName == "WriteSingleCoil")

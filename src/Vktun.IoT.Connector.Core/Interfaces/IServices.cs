@@ -21,11 +21,16 @@ namespace Vktun.IoT.Connector.Core.Interfaces
         Task<bool> UpdateConfigAsync(Action<SdkConfig> updateAction);
         event EventHandler<ConfigChangedEventArgs>? ConfigChanged;
 
-        // Protocol template methods
         Task<List<ProtocolConfig>> LoadProtocolTemplatesAsync(string templatesDirectory);
         Task<ProtocolConfig?> LoadProtocolTemplateAsync(string filePath);
         Task<List<string>> GetProtocolTemplatePathsAsync(string templatesDirectory);
         Task SaveProtocolTemplateAsync(string filePath, ProtocolConfig config);
+        Task<bool> ExportTemplateAsync(ProtocolConfig config, string exportPath);
+        Task<ProtocolConfig?> ImportTemplateAsync(string importPath);
+        Task<ProtocolTemplateVersion?> GetTemplateVersionAsync(string filePath);
+        Task StartTemplateWatchAsync(string templatesDirectory, CancellationToken cancellationToken = default);
+        ProtocolConfigValidationReport ValidateTemplate(ProtocolConfig config);
+        Task<List<ProtocolConfigValidationReport>> ValidateAllTemplatesAsync(string templatesDirectory);
     }
 
     public class ConfigChangedEventArgs : EventArgs
@@ -33,6 +38,7 @@ namespace Vktun.IoT.Connector.Core.Interfaces
         public SdkConfig OldConfig { get; set; } = new SdkConfig();
         public SdkConfig NewConfig { get; set; } = new SdkConfig();
         public DateTime Timestamp { get; set; } = DateTime.Now;
+        public string? AffectedFilePath { get; set; }
     }
 
     public interface IHeartbeatManager

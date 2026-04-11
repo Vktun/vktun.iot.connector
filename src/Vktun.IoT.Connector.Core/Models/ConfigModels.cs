@@ -80,4 +80,31 @@ namespace Vktun.IoT.Connector.Core.Models
         public int MonitorInterval { get; set; } = 5000;
         public bool EnableResourceMonitor { get; set; } = true;
     }
+
+    public class ProtocolTemplateExport
+    {
+        public DateTime ExportTime { get; set; }
+        public string ExportVersion { get; set; } = "1.0";
+        public ProtocolConfig Config { get; set; } = new ProtocolConfig();
+    }
+
+    public class ProtocolTemplateVersion
+    {
+        public string FilePath { get; set; } = string.Empty;
+        public int ConfigVersion { get; set; }
+        public string ProtocolVersion { get; set; } = string.Empty;
+        public DateTime LastModified { get; set; }
+        public long FileSize { get; set; }
+    }
+
+    public class ProtocolConfigValidationReport
+    {
+        public string ProtocolId { get; set; } = string.Empty;
+        public string ProtocolName { get; set; } = string.Empty;
+        public Vktun.IoT.Connector.Core.Enums.ProtocolType ProtocolType { get; set; }
+        public bool IsValid { get; set; }
+        public List<string> Errors { get; set; } = new();
+        public List<string> Warnings { get; set; } = new();
+        public DateTime ValidatedAt { get; set; }
+    }
 }

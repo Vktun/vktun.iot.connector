@@ -3,18 +3,22 @@ using System.Diagnostics;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
+using Vktun.IoT.Connector.Concurrency.Queues;
 
 namespace Vktun.IoT.Connector.Concurrency.Schedulers;
 
 public class TaskScheduler : ITaskScheduler
 {
-    private readonly BlockingCollection<TaskItem> _taskQueue;
+    private readonly PriorityAsyncQueue<PriorityTaskItem> _taskQueue;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<CommandResult>> _taskResults;
     private readonly IConfigurationProvider _configProvider;
-    private readonly IDeviceCommandExecutor _commandExecutor;
     private readonly IDeviceManager _deviceManager;
+    private readonly IDeviceCommandExecutor _commandExecutor;
     private readonly ILogger _logger;
     private readonly SemaphoreSlim _workerSemaphore;
+    private readonly int _maxRetryCount;
+    private readonly int _retryBaseIntervalMs;
+    private readonly int _retryMaxIntervalMs;
 
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _processorTask;
@@ -34,15 +38,21 @@ public class TaskScheduler : ITaskScheduler
         IConfigurationProvider configProvider,
         IDeviceManager deviceManager,
         IDeviceCommandExecutor commandExecutor,
-        ILogger logger)
+        ILogger logger,
+        int maxRetryCount = 3,
+        int retryBaseIntervalMs = 1000,
+        int retryMaxIntervalMs = 30000)
     {
         _configProvider = configProvider;
         _deviceManager = deviceManager;
         _commandExecutor = commandExecutor;
         _logger = logger;
+        _maxRetryCount = maxRetryCount;
+        _retryBaseIntervalMs = retryBaseIntervalMs;
+        _retryMaxIntervalMs = retryMaxIntervalMs;
 
         var config = configProvider.GetConfig();
-        _taskQueue = new BlockingCollection<TaskItem>(config.ThreadPool.TaskQueueCapacity);
+        _taskQueue = new PriorityAsyncQueue<PriorityTaskItem>(config.ThreadPool.TaskQueueCapacity);
         _taskResults = new ConcurrentDictionary<string, TaskCompletionSource<CommandResult>>();
         _workerSemaphore = new SemaphoreSlim(config.ThreadPool.MaxWorkerThreads);
     }
@@ -70,11 +80,16 @@ public class TaskScheduler : ITaskScheduler
 
         _isRunning = false;
         _cancellationTokenSource?.Cancel();
-        _taskQueue.CompleteAdding();
 
         if (_processorTask != null)
         {
-            await _processorTask.ConfigureAwait(false);
+            try
+            {
+                await _processorTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
         }
 
         _cancellationTokenSource?.Dispose();
@@ -88,7 +103,7 @@ public class TaskScheduler : ITaskScheduler
 
     public Task<string> SubmitTaskAsync(DeviceCommand command, TaskPriority priority, CancellationToken cancellationToken = default)
     {
-        var taskItem = new TaskItem
+        var taskItem = new PriorityTaskItem
         {
             TaskId = Guid.NewGuid().ToString("N"),
             Command = command,
@@ -99,7 +114,7 @@ public class TaskScheduler : ITaskScheduler
         var completionSource = new TaskCompletionSource<CommandResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         _taskResults[taskItem.TaskId] = completionSource;
 
-        if (!_taskQueue.TryAdd(taskItem, Timeout.Infinite, cancellationToken))
+        if (!_taskQueue.TryEnqueue(taskItem))
         {
             _taskResults.TryRemove(taskItem.TaskId, out _);
             completionSource.TrySetResult(new CommandResult
@@ -152,19 +167,36 @@ public class TaskScheduler : ITaskScheduler
 
     private async Task ProcessTasksAsync(CancellationToken cancellationToken)
     {
-        foreach (var taskItem in _taskQueue.GetConsumingEnumerable(cancellationToken))
+        while (!cancellationToken.IsCancellationRequested && _isRunning)
         {
-            await _workerSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-            _ = ProcessSingleTaskAsync(taskItem, cancellationToken);
+            try
+            {
+                var taskItem = await _taskQueue.DequeueAsync(cancellationToken).ConfigureAwait(false);
+                if (taskItem == null)
+                {
+                    continue;
+                }
+
+                await _workerSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                _ = ProcessSingleTaskAsync(taskItem, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Error in task processing loop: {ex.Message}", ex);
+            }
         }
     }
 
-    private async Task ProcessSingleTaskAsync(TaskItem taskItem, CancellationToken cancellationToken)
+    private async Task ProcessSingleTaskAsync(PriorityTaskItem taskItem, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _runningTaskCount);
         try
         {
-            var result = await ExecuteTaskAsync(taskItem, cancellationToken).ConfigureAwait(false);
+            var result = await ExecuteWithRetryAsync(taskItem, cancellationToken).ConfigureAwait(false);
             if (_taskResults.TryRemove(taskItem.TaskId, out var completionSource))
             {
                 completionSource.TrySetResult(result);
@@ -207,28 +239,121 @@ public class TaskScheduler : ITaskScheduler
         }
     }
 
-    private async Task<CommandResult> ExecuteTaskAsync(TaskItem taskItem, CancellationToken cancellationToken)
+    private async Task<CommandResult> ExecuteWithRetryAsync(PriorityTaskItem taskItem, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
+        CommandResult? lastResult = null;
+        Exception? lastException = null;
 
-        try
+        for (int attempt = 0; attempt <= _maxRetryCount; attempt++)
         {
-            var device = await ResolveDeviceAsync(taskItem.Command.DeviceId, cancellationToken).ConfigureAwait(false);
-            var result = await _commandExecutor.ExecuteAsync(taskItem.Command, device, cancellationToken).ConfigureAwait(false);
-            result.CommandId = taskItem.TaskId;
-            result.ElapsedTime = stopwatch.Elapsed;
-            return result;
-        }
-        catch (Exception ex)
-        {
-            return new CommandResult
+            if (cancellationToken.IsCancellationRequested)
             {
-                CommandId = taskItem.TaskId,
-                Success = false,
-                ErrorMessage = ex.Message,
-                ElapsedTime = stopwatch.Elapsed
-            };
+                return new CommandResult
+                {
+                    CommandId = taskItem.TaskId,
+                    Success = false,
+                    ErrorMessage = "Task was cancelled.",
+                    ElapsedTime = stopwatch.Elapsed
+                };
+            }
+
+            try
+            {
+                if (attempt > 0)
+                {
+                    var delay = CalculateRetryDelay(attempt);
+                    _logger.Info($"Retrying task {taskItem.TaskId} (attempt {attempt}/{_maxRetryCount}), delay {delay}ms");
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
+
+                var device = await ResolveDeviceAsync(taskItem.Command.DeviceId, cancellationToken).ConfigureAwait(false);
+                var result = await _commandExecutor.ExecuteAsync(taskItem.Command, device, cancellationToken).ConfigureAwait(false);
+                result.CommandId = taskItem.TaskId;
+                result.ElapsedTime = stopwatch.Elapsed;
+
+                if (result.Success)
+                {
+                    return result;
+                }
+
+                lastResult = result;
+                lastException = null;
+
+                if (!IsRetryableFailure(result))
+                {
+                    return result;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return new CommandResult
+                {
+                    CommandId = taskItem.TaskId,
+                    Success = false,
+                    ErrorMessage = "Task was cancelled.",
+                    ElapsedTime = stopwatch.Elapsed
+                };
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                lastResult = null;
+
+                if (!IsRetryableException(ex) || attempt >= _maxRetryCount)
+                {
+                    break;
+                }
+            }
         }
+
+        if (lastResult != null)
+        {
+            lastResult.ErrorMessage = $"Task failed after {_maxRetryCount + 1} attempts. Last error: {lastResult.ErrorMessage}";
+            return lastResult;
+        }
+
+        return new CommandResult
+        {
+            CommandId = taskItem.TaskId,
+            Success = false,
+            ErrorMessage = $"Task failed after {_maxRetryCount + 1} attempts: {lastException?.Message ?? "Unknown error"}",
+            ElapsedTime = stopwatch.Elapsed
+        };
+    }
+
+    private int CalculateRetryDelay(int attempt)
+    {
+        var delay = _retryBaseIntervalMs * Math.Pow(2, Math.Min(attempt - 1, 8));
+        delay = Math.Min(delay, _retryMaxIntervalMs);
+        var jitter = delay * 0.25 * (Random.Shared.NextDouble() * 2 - 1);
+        return (int)Math.Max(100, delay + jitter);
+    }
+
+    private static bool IsRetryableFailure(CommandResult result)
+    {
+        if (result.Success)
+        {
+            return false;
+        }
+
+        if (result.ErrorMessage != null &&
+            (result.ErrorMessage.Contains("timed out", StringComparison.OrdinalIgnoreCase) ||
+             result.ErrorMessage.Contains("not connected", StringComparison.OrdinalIgnoreCase) ||
+             result.ErrorMessage.Contains("temporarily unavailable", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsRetryableException(Exception ex)
+    {
+        return ex is TimeoutException ||
+               ex is System.Net.Sockets.SocketException ||
+               ex is System.IO.IOException ||
+               ex is InvalidOperationException;
     }
 
     private async Task<DeviceInfo> ResolveDeviceAsync(string deviceId, CancellationToken cancellationToken)
@@ -242,11 +367,27 @@ public class TaskScheduler : ITaskScheduler
         return device;
     }
 
-    private sealed class TaskItem
+    private sealed class PriorityTaskItem : IComparable<PriorityTaskItem>
     {
         public string TaskId { get; set; } = string.Empty;
         public DeviceCommand Command { get; set; } = new();
         public TaskPriority Priority { get; set; }
         public DateTime CreateTime { get; set; }
+
+        public int CompareTo(PriorityTaskItem? other)
+        {
+            if (other == null)
+            {
+                return -1;
+            }
+
+            var priorityCompare = other.Priority.CompareTo(Priority);
+            if (priorityCompare != 0)
+            {
+                return priorityCompare;
+            }
+
+            return CreateTime.CompareTo(other.CreateTime);
+        }
     }
 }

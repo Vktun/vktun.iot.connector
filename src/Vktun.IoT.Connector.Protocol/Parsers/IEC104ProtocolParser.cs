@@ -14,6 +14,12 @@ public class IEC104ProtocolParser : IProtocolParser
 
     public ProtocolType Type => ProtocolType.IEC104;
     public string Name => "IEC104电力协议解析器";
+    public string Version => "1.0.0";
+    public string Description => "IEC 60870-5-104电力协议解析器";
+    public string Vendor => "Vktun";
+    public string[] SupportedDeviceModels => new[] { "*" };
+    public string Author => "Vktun";
+    public ParserStatus Status => ParserStatus.Stable;
 
     public IEC104ProtocolParser(ILogger logger)
     {
@@ -535,6 +541,12 @@ public class IEC104ProtocolParser : IProtocolParser
     {
         try
         {
+            var definition = config.GetDefinition<IEC104Config>();
+            if (definition != null)
+            {
+                return definition;
+            }
+
             var iec104Config = new IEC104Config
             {
                 ProtocolId = config.ProtocolId,
