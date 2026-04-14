@@ -15,6 +15,7 @@ public class TcpClientChannel : CommunicationChannelBase
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<byte[]>> _pendingResponses = new();
     private CancellationTokenSource? _receiveLoopCts;
+    private Task _receiveLoopTask = Task.CompletedTask;
 
     public override CommunicationType CommunicationType => CommunicationType.Tcp;
     public override ConnectionMode ConnectionMode => ConnectionMode.Client;
@@ -34,15 +35,13 @@ public class TcpClientChannel : CommunicationChannelBase
 
     public override async Task CloseAsync()
     {
-        if (!_isConnected)
+        if (!_isConnected && _connections.IsEmpty)
         {
             return;
         }
 
         _isConnected = false;
-        _receiveLoopCts?.Cancel();
-        _receiveLoopCts?.Dispose();
-        _receiveLoopCts = null;
+        await StopReceiveLoopAsync().ConfigureAwait(false);
 
         foreach (var pending in _pendingResponses.Values)
         {
@@ -53,7 +52,7 @@ public class TcpClientChannel : CommunicationChannelBase
         var deviceIds = _connections.Keys.ToArray();
         foreach (var deviceId in deviceIds)
         {
-            await DisconnectDeviceAsync(deviceId).ConfigureAwait(false);
+            await DisconnectDeviceCoreAsync(deviceId, waitForReceiveLoop: false, "Disconnected").ConfigureAwait(false);
         }
 
         await _socketDriver.DisconnectAsync().ConfigureAwait(false);
@@ -176,7 +175,7 @@ public class TcpClientChannel : CommunicationChannelBase
                 ? "TcpClient"
                 : $"TcpClient_{localEndPoint.Address}_{localEndPoint.Port}";
             _receiveLoopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, connection.CancellationTokenSource.Token);
-            _ = ReceiveLoopAsync(device.DeviceId, connection.ReceiveBuffer, _receiveLoopCts.Token);
+            _receiveLoopTask = ReceiveLoopAsync(device.DeviceId, connection.ReceiveBuffer, _receiveLoopCts.Token);
             OnDeviceConnected(device.DeviceId, device);
             return true;
         }
@@ -193,9 +192,24 @@ public class TcpClientChannel : CommunicationChannelBase
 
     public override async Task DisconnectDeviceAsync(string deviceId)
     {
+        await DisconnectDeviceCoreAsync(deviceId, waitForReceiveLoop: true, "Disconnected").ConfigureAwait(false);
+    }
+
+    private async Task DisconnectDeviceCoreAsync(string deviceId, bool waitForReceiveLoop, string reason)
+    {
         if (_connections.TryRemove(deviceId, out var connection))
         {
             connection.CancellationTokenSource?.Cancel();
+
+            if (waitForReceiveLoop)
+            {
+                await StopReceiveLoopAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                StopReceiveLoopWithoutWaiting();
+            }
+
             connection.CancellationTokenSource?.Dispose();
 
             if (_pendingResponses.TryRemove(deviceId, out var pending))
@@ -204,7 +218,7 @@ public class TcpClientChannel : CommunicationChannelBase
             }
 
             await _socketDriver.DisconnectAsync().ConfigureAwait(false);
-            OnDeviceDisconnected(deviceId, "Disconnected");
+            OnDeviceDisconnected(deviceId, reason);
         }
     }
 
@@ -217,7 +231,14 @@ public class TcpClientChannel : CommunicationChannelBase
                 var bytesRead = await _socketDriver.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
                 if (bytesRead <= 0)
                 {
-                    await DisconnectDeviceAsync(deviceId).ConfigureAwait(false);
+                    if (IsReceiveLoopStopping(deviceId, cancellationToken))
+                    {
+                        _logger.Debug($"TCP receive loop stopped for device {deviceId}.");
+                        break;
+                    }
+
+                    _logger.Warning($"TCP remote endpoint closed the connection for device {deviceId}.");
+                    await DisconnectDeviceCoreAsync(deviceId, waitForReceiveLoop: false, "Remote disconnected").ConfigureAwait(false);
                     break;
                 }
 
@@ -241,13 +262,61 @@ public class TcpClientChannel : CommunicationChannelBase
             {
                 break;
             }
+            catch (ObjectDisposedException) when (IsReceiveLoopStopping(deviceId, cancellationToken))
+            {
+                _logger.Debug($"TCP receive loop stopped because the socket was disposed for device {deviceId}.");
+                break;
+            }
             catch (Exception ex)
             {
                 OnErrorOccurred(deviceId, $"Failed to receive TCP data: {ex.Message}", ex);
-                await DisconnectDeviceAsync(deviceId).ConfigureAwait(false);
+                await DisconnectDeviceCoreAsync(deviceId, waitForReceiveLoop: false, "Receive failed").ConfigureAwait(false);
                 break;
             }
         }
+    }
+
+    private async Task StopReceiveLoopAsync()
+    {
+        var receiveLoopCts = _receiveLoopCts;
+        receiveLoopCts?.Cancel();
+
+        var receiveLoopTask = _receiveLoopTask;
+        if (!receiveLoopTask.IsCompleted)
+        {
+            try
+            {
+                await receiveLoopTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        if (ReferenceEquals(_receiveLoopCts, receiveLoopCts))
+        {
+            _receiveLoopCts = null;
+        }
+
+        receiveLoopCts?.Dispose();
+    }
+
+    private void StopReceiveLoopWithoutWaiting()
+    {
+        var receiveLoopCts = _receiveLoopCts;
+        receiveLoopCts?.Cancel();
+
+        if (ReferenceEquals(_receiveLoopCts, receiveLoopCts))
+        {
+            _receiveLoopCts = null;
+        }
+
+        receiveLoopCts?.Dispose();
+    }
+
+    private bool IsReceiveLoopStopping(string deviceId, CancellationToken cancellationToken)
+    {
+        return cancellationToken.IsCancellationRequested || !_isConnected || !_connections.ContainsKey(deviceId);
     }
 
     public override async ValueTask DisposeAsync()

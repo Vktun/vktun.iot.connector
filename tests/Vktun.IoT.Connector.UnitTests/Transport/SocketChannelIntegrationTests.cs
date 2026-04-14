@@ -130,6 +130,45 @@ public class SocketChannelIntegrationTests
     }
 
     [Fact]
+    public async Task TcpClientChannel_WhenRemoteDisconnects_ShouldNotLogReceiveErrorOrRaiseChannelError()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        await using var channel = new TcpClientChannel(_configProvider, _logger);
+        var disconnectedTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var errorTcs = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DeviceDisconnected += (_, args) => disconnectedTcs.TrySetResult(args.Reason);
+        channel.ErrorOccurred += (_, args) => errorTcs.TrySetResult(args.Exception);
+
+        var device = new DeviceInfo
+        {
+            DeviceId = "tcp-remote-close-device",
+            CommunicationType = CommunicationType.Tcp,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "127.0.0.1",
+            Port = port
+        };
+
+        Assert.True(await channel.OpenAsync());
+
+        var acceptTask = listener.AcceptTcpClientAsync();
+        Assert.True(await channel.ConnectDeviceAsync(device));
+
+        using var acceptedClient = await acceptTask;
+        acceptedClient.Close();
+
+        var reason = await disconnectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        Assert.Equal("Remote disconnected", reason);
+        Assert.False(errorTcs.Task.IsCompleted);
+        Assert.DoesNotContain(
+            _logger.ErrorMessages,
+            message => message.Contains("TCP receive failed", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task TcpServerChannel_ShouldWaitAndBindConfiguredDevice()
     {
         var port = GetFreeTcpPort();

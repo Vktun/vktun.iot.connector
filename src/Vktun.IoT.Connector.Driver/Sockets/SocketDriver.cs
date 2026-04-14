@@ -146,9 +146,9 @@ public class TcpSocketDriver : ISocketDriver
             _logger.Debug("TCP send canceled because the socket was disposed.");
             return 0;
         }
-        catch (SocketException ex) when (IsExpectedSocketShutdown(ex))
+        catch (SocketException ex) when (IsExpectedSocketDisconnect(ex))
         {
-            _logger.Debug($"TCP send canceled because the socket was closed: {ex.SocketErrorCode}");
+            LogExpectedSocketDisconnect("send", ex);
             return 0;
         }
         catch (Exception ex)
@@ -185,9 +185,9 @@ public class TcpSocketDriver : ISocketDriver
             _logger.Debug("TCP receive canceled because the socket was disposed.");
             return 0;
         }
-        catch (SocketException ex) when (IsExpectedSocketShutdown(ex))
+        catch (SocketException ex) when (IsExpectedSocketDisconnect(ex))
         {
-            _logger.Debug($"TCP receive canceled because the socket was closed: {ex.SocketErrorCode}");
+            LogExpectedSocketDisconnect("receive", ex);
             return 0;
         }
         catch (Exception ex)
@@ -202,12 +202,27 @@ public class TcpSocketDriver : ISocketDriver
         _socket?.SetSocketOption(level, name, value);
     }
 
-    private static bool IsExpectedSocketShutdown(SocketException exception)
+    private static bool IsExpectedSocketDisconnect(SocketException exception)
     {
         return exception.SocketErrorCode is
+            SocketError.Shutdown or
             SocketError.OperationAborted or
+            SocketError.ConnectionAborted or
+            SocketError.ConnectionReset or
+            SocketError.NotConnected or
             SocketError.Interrupted or
             SocketError.NotSocket;
+    }
+
+    private void LogExpectedSocketDisconnect(string operation, SocketException exception)
+    {
+        if (exception.SocketErrorCode is SocketError.ConnectionAborted or SocketError.ConnectionReset)
+        {
+            _logger.Warning($"TCP {operation} ended because the remote endpoint closed the connection: {exception.SocketErrorCode}");
+            return;
+        }
+
+        _logger.Debug($"TCP {operation} canceled because the socket was closed: {exception.SocketErrorCode}");
     }
 
     public async ValueTask DisposeAsync()
