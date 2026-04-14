@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Driver</PackageId>
-    <Version>0.0.2</Version>
+    <Version>0.0.3</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Driver - 底层驱动组件库，提供 Socket 和网络通信的底层驱动实现。
 

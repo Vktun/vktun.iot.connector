@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Concurrency</PackageId>
-    <Version>0.0.2</Version>
+    <Version>0.0.3</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Concurrency - 并发处理组件库，提供高性能的异步队列、任务调度和资源监控功能。
 

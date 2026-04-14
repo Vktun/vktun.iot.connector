@@ -300,3 +300,9 @@ FodyWeavers.xsd
 .trae/*
 .lingma/
 .lingma
+
+scripts/
+scripts/*
+artifacts/
+nupkgs/
+.dotnet-home/.dotnet/*

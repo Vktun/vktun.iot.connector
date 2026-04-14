@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Serial</PackageId>
-    <Version>0.0.2</Version>
+    <Version>0.0.3</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Serial - 串口通信组件库，提供完整的串口通信功能，支持 RS232/RS485 等串行通信接口。
 

@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector</PackageId>
-    <Version>0.0.2</Version>
+    <Version>0.0.3</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector - 完整的 IoT 设备连接 SDK，支持多种工业协议和通信方式，提供设备管理、数据采集、云端连接等一站式解决方案。
 

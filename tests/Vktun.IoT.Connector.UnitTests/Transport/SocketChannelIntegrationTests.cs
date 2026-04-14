@@ -12,7 +12,7 @@ namespace Vktun.IoT.Connector.UnitTests.Transport;
 public class SocketChannelIntegrationTests
 {
     private readonly IConfigurationProvider _configProvider = new TestConfigurationProvider();
-    private readonly ILogger _logger = new TestLogger();
+    private readonly TestLogger _logger = new();
 
     [Fact]
     public async Task TcpClientChannel_ShouldSendAndReceive()
@@ -54,6 +54,79 @@ public class SocketChannelIntegrationTests
         var readBuffer = new byte[64];
         var read = await stream.ReadAsync(readBuffer);
         Assert.Equal(outbound, readBuffer.Take(read).ToArray());
+    }
+
+    [Fact]
+    public async Task TcpClientChannel_CloseAsync_ShouldNotLogReceiveErrorWhenReceiveLoopIsCanceled()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        await using var channel = new TcpClientChannel(_configProvider, _logger);
+        var device = new DeviceInfo
+        {
+            DeviceId = "tcp-close-device",
+            CommunicationType = CommunicationType.Tcp,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "127.0.0.1",
+            Port = port
+        };
+
+        Assert.True(await channel.OpenAsync());
+
+        var acceptTask = listener.AcceptTcpClientAsync();
+        Assert.True(await channel.ConnectDeviceAsync(device));
+
+        using var acceptedClient = await acceptTask;
+        await Task.Delay(100);
+
+        await channel.CloseAsync();
+
+        Assert.DoesNotContain(
+            _logger.ErrorMessages,
+            message => message.Contains("TCP receive failed", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task TcpClientChannel_SendAndReceiveAsync_WhenResponseTimesOut_ShouldNotLogReceiveError()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        await using var channel = new TcpClientChannel(_configProvider, _logger);
+        var device = new DeviceInfo
+        {
+            DeviceId = "tcp-timeout-device",
+            CommunicationType = CommunicationType.Tcp,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "127.0.0.1",
+            Port = port
+        };
+
+        Assert.True(await channel.OpenAsync());
+
+        var acceptTask = listener.AcceptTcpClientAsync();
+        Assert.True(await channel.ConnectDeviceAsync(device));
+
+        using var acceptedClient = await acceptTask;
+        using var stream = acceptedClient.GetStream();
+
+        var outbound = Encoding.UTF8.GetBytes("timeout-request");
+        var sendReceiveTask = channel.SendAndReceiveAsync(device.DeviceId, outbound, timeoutMs: 100);
+
+        var readBuffer = new byte[64];
+        using var readCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var read = await stream.ReadAsync(readBuffer, readCts.Token);
+        Assert.Equal(outbound, readBuffer.Take(read).ToArray());
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => sendReceiveTask);
+        await channel.CloseAsync();
+
+        Assert.DoesNotContain(
+            _logger.ErrorMessages,
+            message => message.Contains("TCP receive failed", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -223,8 +296,21 @@ public class SocketChannelIntegrationTests
 
     private sealed class TestLogger : ILogger
     {
+        private readonly object _gate = new();
+
+        public List<string> ErrorMessages { get; } = [];
+
         public void Log(LogLevel level, string message, Exception? exception = null)
         {
+            if (level < LogLevel.Error)
+            {
+                return;
+            }
+
+            lock (_gate)
+            {
+                ErrorMessages.Add(message);
+            }
         }
 
         public void Debug(string message)
@@ -241,10 +327,12 @@ public class SocketChannelIntegrationTests
 
         public void Error(string message, Exception? exception = null)
         {
+            Log(LogLevel.Error, message, exception);
         }
 
         public void Fatal(string message, Exception? exception = null)
         {
+            Log(LogLevel.Fatal, message, exception);
         }
     }
 }

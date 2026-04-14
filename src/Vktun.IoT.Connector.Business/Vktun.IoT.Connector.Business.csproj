@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Business</PackageId>
-    <Version>0.0.2</Version>
+    <Version>0.0.3</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Business - 业务逻辑层，提供设备管理、会话管理、云连接器等核心业务功能。
 

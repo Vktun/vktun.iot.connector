@@ -69,6 +69,18 @@ public class TcpSocketDriver : ISocketDriver
             _logger.Info($"TCP connected: {remoteEndPoint}");
             return true;
         }
+        catch (OperationCanceledException)
+        {
+            _logger.Debug($"TCP connect canceled: {remoteEndPoint}");
+            await DisconnectAsync().ConfigureAwait(false);
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.Debug($"TCP connect canceled because the socket was disposed: {remoteEndPoint}");
+            await DisconnectAsync().ConfigureAwait(false);
+            return false;
+        }
         catch (Exception ex)
         {
             _logger.Error($"TCP connect failed: {ex.Message}", ex);
@@ -79,16 +91,19 @@ public class TcpSocketDriver : ISocketDriver
 
     public Task DisconnectAsync()
     {
-        if (_socket == null)
+        var socket = _socket;
+        if (socket == null)
         {
             return Task.CompletedTask;
         }
 
+        _socket = null;
+
         try
         {
-            if (_socket.Connected)
+            if (socket.Connected)
             {
-                _socket.Shutdown(SocketShutdown.Both);
+                socket.Shutdown(SocketShutdown.Both);
             }
         }
         catch (SocketException)
@@ -96,9 +111,8 @@ public class TcpSocketDriver : ISocketDriver
         }
         finally
         {
-            _socket.Close();
-            _socket.Dispose();
-            _socket = null;
+            socket.Close();
+            socket.Dispose();
         }
 
         _logger.Info("TCP disconnected.");
@@ -112,14 +126,30 @@ public class TcpSocketDriver : ISocketDriver
 
     public async Task<int> SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
     {
-        if (_socket == null || !_socket.Connected)
+        var socket = _socket;
+        if (socket == null || !socket.Connected)
         {
             return 0;
         }
 
         try
         {
-            return await _socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+            return await socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.Debug("TCP send canceled.");
+            return 0;
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.Debug("TCP send canceled because the socket was disposed.");
+            return 0;
+        }
+        catch (SocketException ex) when (IsExpectedSocketShutdown(ex))
+        {
+            _logger.Debug($"TCP send canceled because the socket was closed: {ex.SocketErrorCode}");
+            return 0;
         }
         catch (Exception ex)
         {
@@ -135,14 +165,30 @@ public class TcpSocketDriver : ISocketDriver
 
     public async Task<int> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        if (_socket == null || !_socket.Connected)
+        var socket = _socket;
+        if (socket == null || !socket.Connected)
         {
             return 0;
         }
 
         try
         {
-            return await _socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+            return await socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.Debug("TCP receive canceled.");
+            return 0;
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.Debug("TCP receive canceled because the socket was disposed.");
+            return 0;
+        }
+        catch (SocketException ex) when (IsExpectedSocketShutdown(ex))
+        {
+            _logger.Debug($"TCP receive canceled because the socket was closed: {ex.SocketErrorCode}");
+            return 0;
         }
         catch (Exception ex)
         {
@@ -154,6 +200,14 @@ public class TcpSocketDriver : ISocketDriver
     public void SetSocketOption(SocketOptionLevel level, SocketOptionName name, object value)
     {
         _socket?.SetSocketOption(level, name, value);
+    }
+
+    private static bool IsExpectedSocketShutdown(SocketException exception)
+    {
+        return exception.SocketErrorCode is
+            SocketError.OperationAborted or
+            SocketError.Interrupted or
+            SocketError.NotSocket;
     }
 
     public async ValueTask DisposeAsync()
@@ -210,6 +264,20 @@ public class UdpSocketDriver : ISocketDriver
             _logger.Info($"UDP connected: {remoteEndPoint}");
             return Task.FromResult(true);
         }
+        catch (OperationCanceledException)
+        {
+            _logger.Debug($"UDP connect canceled: {remoteEndPoint}");
+            _socket?.Dispose();
+            _socket = null;
+            return Task.FromResult(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.Debug($"UDP connect canceled because the socket was disposed: {remoteEndPoint}");
+            _socket?.Dispose();
+            _socket = null;
+            return Task.FromResult(false);
+        }
         catch (Exception ex)
         {
             _logger.Error($"UDP connect failed: {ex.Message}", ex);
@@ -221,14 +289,15 @@ public class UdpSocketDriver : ISocketDriver
 
     public Task DisconnectAsync()
     {
-        if (_socket == null)
+        var socket = _socket;
+        if (socket == null)
         {
             return Task.CompletedTask;
         }
 
-        _socket.Close();
-        _socket.Dispose();
         _socket = null;
+        socket.Close();
+        socket.Dispose();
         _logger.Info("UDP disconnected.");
         return Task.CompletedTask;
     }
@@ -240,14 +309,30 @@ public class UdpSocketDriver : ISocketDriver
 
     public async Task<int> SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
     {
-        if (_socket == null)
+        var socket = _socket;
+        if (socket == null)
         {
             return 0;
         }
 
         try
         {
-            return await _socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+            return await socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.Debug("UDP send canceled.");
+            return 0;
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.Debug("UDP send canceled because the socket was disposed.");
+            return 0;
+        }
+        catch (SocketException ex) when (IsExpectedSocketShutdown(ex))
+        {
+            _logger.Debug($"UDP send canceled because the socket was closed: {ex.SocketErrorCode}");
+            return 0;
         }
         catch (Exception ex)
         {
@@ -263,14 +348,30 @@ public class UdpSocketDriver : ISocketDriver
 
     public async Task<int> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        if (_socket == null)
+        var socket = _socket;
+        if (socket == null)
         {
             return 0;
         }
 
         try
         {
-            return await _socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+            return await socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.Debug("UDP receive canceled.");
+            return 0;
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.Debug("UDP receive canceled because the socket was disposed.");
+            return 0;
+        }
+        catch (SocketException ex) when (IsExpectedSocketShutdown(ex))
+        {
+            _logger.Debug($"UDP receive canceled because the socket was closed: {ex.SocketErrorCode}");
+            return 0;
         }
         catch (Exception ex)
         {
@@ -282,6 +383,14 @@ public class UdpSocketDriver : ISocketDriver
     public void SetSocketOption(SocketOptionLevel level, SocketOptionName name, object value)
     {
         _socket?.SetSocketOption(level, name, value);
+    }
+
+    private static bool IsExpectedSocketShutdown(SocketException exception)
+    {
+        return exception.SocketErrorCode is
+            SocketError.OperationAborted or
+            SocketError.Interrupted or
+            SocketError.NotSocket;
     }
 
     public async ValueTask DisposeAsync()
