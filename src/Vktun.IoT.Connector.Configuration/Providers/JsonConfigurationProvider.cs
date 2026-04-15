@@ -290,8 +290,8 @@ public class JsonConfigurationProvider : IConfigurationProvider
             return new ProtocolTemplateVersion
             {
                 FilePath = filePath,
-                ConfigVersion = root.TryGetProperty("ConfigVersion", out var v) ? v.GetInt32() : 1,
-                ProtocolVersion = root.TryGetProperty("ProtocolVersion", out var pv) && pv.ValueKind == JsonValueKind.String ? pv.GetString() ?? "1.0.0" : "1.0.0",
+                ConfigVersion = TryGetProperty(root, "ConfigVersion", out var v) ? v.GetInt32() : 1,
+                ProtocolVersion = TryGetProperty(root, "ProtocolVersion", out var pv) && pv.ValueKind == JsonValueKind.String ? pv.GetString() ?? "1.0.0" : "1.0.0",
                 LastModified = fileInfo.LastWriteTimeUtc,
                 FileSize = fileInfo.Length
             };
@@ -486,7 +486,7 @@ public class JsonConfigurationProvider : IConfigurationProvider
                 : ProtocolType.ModbusRtu;
         }
 
-        if (root.TryGetProperty("FrameType", out _))
+        if (TryGetProperty(root, "FrameType", out _))
         {
             return ProtocolType.Custom;
         }
@@ -512,13 +512,37 @@ public class JsonConfigurationProvider : IConfigurationProvider
 
     private static bool TryReadString(JsonElement root, string propertyName, out string value)
     {
-        if (root.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String)
+        if (TryGetProperty(root, propertyName, out var property) && property.ValueKind == JsonValueKind.String)
         {
             value = property.GetString() ?? string.Empty;
             return true;
         }
 
         value = string.Empty;
+        return false;
+    }
+
+    private static bool TryGetProperty(JsonElement root, string propertyName, out JsonElement property)
+    {
+        if (root.TryGetProperty(propertyName, out property))
+        {
+            return true;
+        }
+
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach (var candidate in root.EnumerateObject())
+        {
+            if (candidate.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                property = candidate.Value;
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -588,6 +612,35 @@ public class JsonConfigurationProvider : IConfigurationProvider
                 MaxSocketHandles = 10000,
                 MonitorInterval = 5000,
                 EnableResourceMonitor = true
+            },
+            Cache = new CacheConfig
+            {
+                IsUseRedis = false,
+                Backend = DataCacheBackend.Memory,
+                MaxSize = 0,
+                Redis = new RedisCacheConfig
+                {
+                    ConnectionString = string.Empty,
+                    InstanceName = "vktun:iot:cache",
+                    Database = -1,
+                    ConnectTimeout = 5000,
+                    SyncTimeout = 5000,
+                    AbortOnConnectFail = false,
+                    KeyTtlSeconds = 0
+                }
+            },
+            Persistence = new DataPersistenceConfig
+            {
+                Enabled = false,
+                Backend = DataPersistenceBackend.None,
+                FilePath = "data/device-data.jsonl",
+                SqliteConnectionString = "Data Source=vktun-device-data.db",
+                MaxHistoryItems = 100000,
+                EnableWriteBuffer = true,
+                WriteQueueCapacity = 10000,
+                BackpressureStrategy = DataPersistenceBackpressureStrategy.Wait,
+                FailureStrategy = DataPersistenceFailureStrategy.CacheOnly,
+                ReplayBatchSize = 1000
             }
         };
     }

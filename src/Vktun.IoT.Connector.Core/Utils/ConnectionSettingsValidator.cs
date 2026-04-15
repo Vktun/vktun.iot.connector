@@ -96,6 +96,11 @@ public static class ConnectionSettingsValidator
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(settings);
 
+        if (settings.CommunicationType is not CommunicationType.Tcp and not CommunicationType.Udp)
+        {
+            return;
+        }
+
         device.IpAddress = settings.RemoteIpAddressText;
         device.Port = settings.RemotePort;
         device.LocalIpAddress = settings.LocalIpAddressText;

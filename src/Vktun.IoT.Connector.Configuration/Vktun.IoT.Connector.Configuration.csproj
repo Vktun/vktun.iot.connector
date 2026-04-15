@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Configuration</PackageId>
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Configuration - 配置管理组件，提供日志配置、证书管理、JSON 配置提供程序等功能。
 
@@ -38,10 +38,11 @@ var configProvider = new JsonConfigurationProvider(logger, "config.json");
 var config = await configProvider.LoadConfigAsync("config.json");</Description>
     <PackageTags>IoT;Connector;Configuration;Logging;Certificate;Serilog;JSON;Settings</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="README.md" Pack="false" Condition="Exists('README.md')" />
+    <None Update="README.md" Pack="true" PackagePath="" Condition="Exists('README.md')" />
   </ItemGroup>
 
   <ItemGroup>

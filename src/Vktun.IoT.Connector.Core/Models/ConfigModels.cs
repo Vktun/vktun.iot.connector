@@ -1,3 +1,5 @@
+using Vktun.IoT.Connector.Core.Enums;
+
 namespace Vktun.IoT.Connector.Core.Models
 {
     public class SdkConfig
@@ -5,10 +7,13 @@ namespace Vktun.IoT.Connector.Core.Models
         public GlobalConfig Global { get; set; } = new GlobalConfig();
         public TcpConfig Tcp { get; set; } = new TcpConfig();
         public UdpConfig Udp { get; set; } = new UdpConfig();
+        public HttpConfig Http { get; set; } = new HttpConfig();
         public SerialConfig Serial { get; set; } = new SerialConfig();
         public WirelessConfig Wireless { get; set; } = new WirelessConfig();
         public ThreadPoolConfig ThreadPool { get; set; } = new ThreadPoolConfig();
         public ResourceConfig Resource { get; set; } = new ResourceConfig();
+        public CacheConfig Cache { get; set; } = new CacheConfig();
+        public DataPersistenceConfig Persistence { get; set; } = new DataPersistenceConfig();
     }
 
     public class GlobalConfig
@@ -42,6 +47,16 @@ namespace Vktun.IoT.Connector.Core.Models
         public int DeviceOfflineTimeout { get; set; } = 40000;
         public int ReceiveBufferSize { get; set; } = 65536;
         public int MaxDataRate { get; set; } = 1000;
+    }
+
+    public class HttpConfig
+    {
+        public string DefaultScheme { get; set; } = "http";
+        public string DefaultMethod { get; set; } = "POST";
+        public string DefaultContentType { get; set; } = "application/octet-stream";
+        public int RequestTimeout { get; set; } = 5000;
+        public int MaxConnectionsPerServer { get; set; } = 512;
+        public int PooledConnectionLifetimeSeconds { get; set; } = 300;
     }
 
     public class SerialConfig
@@ -79,6 +94,41 @@ namespace Vktun.IoT.Connector.Core.Models
         public int MaxSocketHandles { get; set; } = 10000;
         public int MonitorInterval { get; set; } = 5000;
         public bool EnableResourceMonitor { get; set; } = true;
+        public int SlowRequestThresholdMs { get; set; } = 1000;
+        public int MaxDiagnosticTraces { get; set; } = 256;
+    }
+
+    public class CacheConfig
+    {
+        public bool IsUseRedis { get; set; }
+        public DataCacheBackend Backend { get; set; } = DataCacheBackend.Memory;
+        public int MaxSize { get; set; }
+        public RedisCacheConfig Redis { get; set; } = new RedisCacheConfig();
+    }
+
+    public class RedisCacheConfig
+    {
+        public string ConnectionString { get; set; } = string.Empty;
+        public string InstanceName { get; set; } = "vktun:iot:cache";
+        public int Database { get; set; } = -1;
+        public int ConnectTimeout { get; set; } = 5000;
+        public int SyncTimeout { get; set; } = 5000;
+        public bool AbortOnConnectFail { get; set; }
+        public int KeyTtlSeconds { get; set; }
+    }
+
+    public class DataPersistenceConfig
+    {
+        public bool Enabled { get; set; }
+        public DataPersistenceBackend Backend { get; set; } = DataPersistenceBackend.None;
+        public string FilePath { get; set; } = "data/device-data.jsonl";
+        public string SqliteConnectionString { get; set; } = "Data Source=vktun-device-data.db";
+        public int MaxHistoryItems { get; set; } = 100000;
+        public bool EnableWriteBuffer { get; set; } = true;
+        public int WriteQueueCapacity { get; set; } = 10000;
+        public DataPersistenceBackpressureStrategy BackpressureStrategy { get; set; } = DataPersistenceBackpressureStrategy.Wait;
+        public DataPersistenceFailureStrategy FailureStrategy { get; set; } = DataPersistenceFailureStrategy.CacheOnly;
+        public int ReplayBatchSize { get; set; } = 1000;
     }
 
     public class ProtocolTemplateExport

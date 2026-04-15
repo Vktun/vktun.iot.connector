@@ -64,10 +64,10 @@ internal static class Program
         var sessionManager = new SessionManager(Logger);
         var parserFactory = new ProtocolParserFactory(Logger);
         var channelFactory = new CommunicationChannelFactory(configProvider, Logger);
-        var commandExecutor = new DeviceCommandExecutor(channelFactory, parserFactory, configProvider, Logger);
-        var deviceManager = new DeviceManager(sessionManager, commandExecutor, Logger);
-        var taskScheduler = new Vktun.IoT.Connector.Concurrency.Schedulers.TaskScheduler(configProvider, deviceManager, commandExecutor, Logger);
         var resourceMonitor = new ResourceMonitor(configProvider, Logger);
+        var commandExecutor = new DeviceCommandExecutor(channelFactory, parserFactory, configProvider, Logger, resourceMonitor);
+        var deviceManager = new DeviceManager(sessionManager, commandExecutor, Logger, resourceMonitor: resourceMonitor);
+        var taskScheduler = new Vktun.IoT.Connector.Concurrency.Schedulers.TaskScheduler(configProvider, deviceManager, commandExecutor, Logger);
         var heartbeatManager = new HeartbeatManager(configProvider, Logger);
         var dataProvider = new DataProvider(new DataCache(10_000), Logger);
 

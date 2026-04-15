@@ -6,9 +6,9 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Business</PackageId>
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
     <Authors>Vktun</Authors>
-    <Description>Vktun IoT Connector Business - 业务逻辑层，提供设备管理、会话管理、云连接器等核心业务功能。
+    <Description>Vktun IoT Connector Business - 运行时编排层，提供设备管理、会话管理、通道工厂、命令执行和云连接器等核心运行能力。
 
 主要功能：
 - 设备管理器（DeviceManager）：设备的注册、连接、断开、状态管理等
@@ -29,12 +29,13 @@
 var deviceManager = new DeviceManager(sessionManager, commandExecutor, logger);
 await deviceManager.AddDeviceAsync(new DeviceInfo { DeviceId = "device-001" });
 await deviceManager.ConnectDeviceAsync("device-001");</Description>
-    <PackageTags>IoT;Connector;Business;DeviceManagement;CloudConnector;AzureIoTHub;AWSIoT;SessionManagement</PackageTags>
+    <PackageTags>IoT;Connector;Runtime;Hosting;Business;DeviceManagement;CloudConnector;AzureIoTHub;AWSIoT;SessionManagement</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="README.md" Pack="false" Condition="Exists('README.md')" />
+    <None Update="README.md" Pack="true" PackagePath="" Condition="Exists('README.md')" />
   </ItemGroup>
 
   <ItemGroup>
@@ -48,6 +49,9 @@ await deviceManager.ConnectDeviceAsync("device-001");</Description>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Devices.Client" Version="1.42.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
   </ItemGroup>
 
 </Project>

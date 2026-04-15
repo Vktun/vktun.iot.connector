@@ -50,6 +50,52 @@ public class CommunicationChannelFactoryTests
         Assert.Equal(0, device.Port);
     }
 
+    [Fact]
+    public void CreateChannel_HttpClient_ShouldCreateHttpChannel()
+    {
+        var device = new DeviceInfo
+        {
+            DeviceId = "http-client",
+            CommunicationType = CommunicationType.Http,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "api.example.test",
+            ExtendedProperties = new Dictionary<string, object>
+            {
+                ["Scheme"] = "https",
+                ["Path"] = "/collect"
+            }
+        };
+
+        var channel = _factory.CreateChannel(device);
+
+        Assert.Equal(CommunicationType.Http, channel.CommunicationType);
+        Assert.Equal(ConnectionMode.Client, channel.ConnectionMode);
+        Assert.Equal("api.example.test", device.IpAddress);
+    }
+
+    [Fact]
+    public void CreateChannel_MqttClient_ShouldCreateMqttChannel()
+    {
+        var device = new DeviceInfo
+        {
+            DeviceId = "mqtt-client",
+            CommunicationType = CommunicationType.Mqtt,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "broker.example.test",
+            Port = 1883,
+            ExtendedProperties = new Dictionary<string, object>
+            {
+                ["SubscribeTopics"] = "devices/+/telemetry,devices/+/status",
+                ["QosLevel"] = "1"
+            }
+        };
+
+        var channel = _factory.CreateChannel(device);
+
+        Assert.Equal(CommunicationType.Mqtt, channel.CommunicationType);
+        Assert.Equal(ConnectionMode.Client, channel.ConnectionMode);
+    }
+
     private sealed class TestConfigurationProvider : IConfigurationProvider
     {
         private readonly SdkConfig _config = new();
@@ -104,4 +150,3 @@ public class CommunicationChannelFactoryTests
         }
     }
 }
-

@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Communication</PackageId>
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Communication - 通信通道实现库，提供多种通信协议的通道实现。
 
@@ -14,6 +14,7 @@
 - TCP 客户端通道（TcpClientChannel）：TCP 客户端连接和数据收发
 - TCP 服务端通道（TcpServerChannel）：TCP 服务端监听和多客户端管理
 - UDP 通道（UdpChannel）：UDP 数据报通信
+- HTTP 客户端通道（HttpClientChannel）：基于 IHttpClientFactory 的 HTTP 设备/API 请求
 - MQTT 通道（MqttChannel）：MQTT 3.1.1/5.0 协议支持，支持发布/订阅模式
 - 安全 TCP 通道（SecureTcpChannel）：SSL/TLS 加密的 TCP 通信
 - 通信通道基类（CommunicationChannelBase）：统一的通道抽象和事件管理
@@ -33,17 +34,23 @@ var channel = new TcpClientChannel(configProvider, logger);
 await channel.OpenAsync();
 await channel.ConnectDeviceAsync(device);
 await channel.SendAsync(device.DeviceId, data);</Description>
-    <PackageTags>IoT;Connector;Communication;TCP;UDP;MQTT;SSL;TLS;Socket;Network</PackageTags>
+    <PackageTags>IoT;Connector;Communication;TCP;UDP;HTTP;MQTT;SSL;TLS;Socket;Network</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="README.md" Pack="false" Condition="Exists('README.md')" />
+    <None Update="README.md" Pack="true" PackagePath="" Condition="Exists('README.md')" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />
     <ProjectReference Include="..\Vktun.IoT.Connector.Driver\Vktun.IoT.Connector.Driver.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
   </ItemGroup>
 
 </Project>

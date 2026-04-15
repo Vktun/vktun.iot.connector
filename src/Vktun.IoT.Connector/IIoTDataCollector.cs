@@ -23,6 +23,7 @@ public interface IIoTDataCollector : IAsyncDisposable
     
     Task<DeviceData?> CollectDataAsync(string deviceId, CancellationToken cancellationToken = default);
     Task<CommandResult> SendCommandAsync(DeviceCommand command, CancellationToken cancellationToken = default);
+    Task<ResourceSnapshot> GetResourceSnapshotAsync(CancellationToken cancellationToken = default);
     
     Task<SdkConfig> GetConfigAsync();
     Task UpdateConfigAsync(SdkConfig config);
@@ -39,13 +40,4 @@ public class DeviceErrorEventArgs : EventArgs
     public string ErrorMessage { get; set; } = string.Empty;
     public Exception? Exception { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.Now;
-}
-
-public class CommandResult
-{
-    public string CommandId { get; set; } = string.Empty;
-    public bool Success { get; set; }
-    public byte[]? ResponseData { get; set; }
-    public string? ErrorMessage { get; set; }
-    public TimeSpan ElapsedTime { get; set; }
 }

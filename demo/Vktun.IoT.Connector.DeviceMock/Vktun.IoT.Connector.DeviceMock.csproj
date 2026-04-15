@@ -5,6 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
     <AssemblyName>Vktun.IoT.Connector.DeviceMock</AssemblyName>
     <RootNamespace>Vktun.IoT.Connector.DeviceMock</RootNamespace>
   </PropertyGroup>

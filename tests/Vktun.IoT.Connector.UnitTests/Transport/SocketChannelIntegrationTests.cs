@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Text;
 using Vktun.IoT.Connector.Communication.Channels;
@@ -287,6 +289,190 @@ public class SocketChannelIntegrationTests
         Assert.Equal(outbound, reply.Buffer);
     }
 
+    [Fact]
+    public async Task HttpClientChannel_SendAsync_ShouldUseInjectedFactoryAndRaiseDataReceived()
+    {
+        var responsePayload = Encoding.UTF8.GetBytes("{\"ok\":true}");
+        var handler = new TestHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(responsePayload)
+        });
+        using var httpClient = new HttpClient(handler);
+        await using var channel = new HttpClientChannel(_configProvider, _logger, new TestHttpClientFactory(httpClient));
+        var receivedTcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DataReceived += (_, args) => receivedTcs.TrySetResult(args.Data);
+
+        var device = new DeviceInfo
+        {
+            DeviceId = "http-device",
+            CommunicationType = CommunicationType.Http,
+            ConnectionMode = ConnectionMode.Client,
+            ExtendedProperties = new Dictionary<string, object>
+            {
+                ["Url"] = "https://api.example.test/devices/http-device",
+                ["Method"] = "PUT",
+                ["ContentType"] = "application/json",
+                ["Headers"] = new Dictionary<string, string>
+                {
+                    ["X-Device"] = "http-device"
+                }
+            }
+        };
+
+        Assert.True(await channel.OpenAsync());
+        Assert.True(await channel.ConnectDeviceAsync(device));
+
+        var requestPayload = Encoding.UTF8.GetBytes("{\"value\":42}");
+        var sent = await channel.SendAsync(device.DeviceId, requestPayload);
+        var received = await receivedTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        Assert.Equal(requestPayload.Length, sent);
+        Assert.Equal(responsePayload, received);
+        Assert.Equal(HttpMethod.Put, handler.RequestMethod);
+        Assert.Equal("https://api.example.test/devices/http-device", handler.RequestUri?.ToString());
+        Assert.Equal(requestPayload, handler.RequestBody);
+        Assert.True(handler.RequestHeaders.TryGetValues("X-Device", out var headerValues));
+        Assert.Contains("http-device", headerValues);
+    }
+
+    [Fact]
+    public async Task HttpClientChannel_SendAsync_ShouldReturnZeroAndRaiseErrorForNonSuccessStatus()
+    {
+        var handler = new TestHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            ReasonPhrase = "server-error",
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes("failed"))
+        });
+        using var httpClient = new HttpClient(handler);
+        await using var channel = new HttpClientChannel(_configProvider, _logger, new TestHttpClientFactory(httpClient));
+        var errorTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.ErrorOccurred += (_, args) => errorTcs.TrySetResult(args.Message);
+
+        var device = CreateHttpDevice("http-non-success");
+
+        Assert.True(await channel.OpenAsync());
+        Assert.True(await channel.ConnectDeviceAsync(device));
+
+        var sent = await channel.SendAsync(device.DeviceId, Encoding.UTF8.GetBytes("{}"));
+        var error = await errorTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        Assert.Equal(0, sent);
+        Assert.Contains("500", error);
+        Assert.Equal(1, channel.Statistics.TotalErrors);
+    }
+
+    [Fact]
+    public async Task HttpClientChannel_SendAsync_ShouldRaiseDataReceivedForEmptyResponseBody()
+    {
+        var handler = new TestHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent)
+        {
+            Content = new ByteArrayContent(Array.Empty<byte>())
+        });
+        using var httpClient = new HttpClient(handler);
+        await using var channel = new HttpClientChannel(_configProvider, _logger, new TestHttpClientFactory(httpClient));
+        var receivedTcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DataReceived += (_, args) => receivedTcs.TrySetResult(args.Data);
+
+        var device = CreateHttpDevice("http-empty-response");
+
+        Assert.True(await channel.OpenAsync());
+        Assert.True(await channel.ConnectDeviceAsync(device));
+
+        var requestPayload = Encoding.UTF8.GetBytes("ping");
+        var sent = await channel.SendAsync(device.DeviceId, requestPayload);
+        var received = await receivedTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        Assert.Equal(requestPayload.Length, sent);
+        Assert.Empty(received);
+    }
+
+    [Fact]
+    public async Task HttpClientChannel_SendAsync_ShouldReturnZeroWhenCancellationRequested()
+    {
+        var handler = new TestHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes("late"))
+        }, TimeSpan.FromSeconds(5));
+        using var httpClient = new HttpClient(handler);
+        await using var channel = new HttpClientChannel(_configProvider, _logger, new TestHttpClientFactory(httpClient));
+        var device = CreateHttpDevice("http-canceled");
+
+        Assert.True(await channel.OpenAsync());
+        Assert.True(await channel.ConnectDeviceAsync(device));
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var sent = await channel.SendAsync(device.DeviceId, Encoding.UTF8.GetBytes("payload"), cts.Token);
+
+        Assert.Equal(0, sent);
+        Assert.Equal(0, channel.Statistics.TotalErrors);
+    }
+
+    [Fact]
+    public async Task HttpClientChannel_SendAsync_ShouldReturnZeroWhenRequestTimeoutExpires()
+    {
+        var configProvider = new TestConfigurationProvider(new SdkConfig
+        {
+            Global = new GlobalConfig { ConnectionTimeout = 3000 },
+            Http = new HttpConfig { RequestTimeout = 50 }
+        });
+        var handler = new TestHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes("late"))
+        }, TimeSpan.FromSeconds(5));
+        using var httpClient = new HttpClient(handler);
+        await using var channel = new HttpClientChannel(configProvider, _logger, new TestHttpClientFactory(httpClient));
+        var device = CreateHttpDevice("http-timeout");
+
+        Assert.True(await channel.OpenAsync());
+        Assert.True(await channel.ConnectDeviceAsync(device));
+
+        var sent = await channel.SendAsync(device.DeviceId, Encoding.UTF8.GetBytes("payload"));
+
+        Assert.Equal(0, sent);
+        Assert.Equal(0, channel.Statistics.TotalErrors);
+    }
+
+    [Fact]
+    public async Task HttpClientChannel_SendAsync_ShouldSupportConcurrentRequests()
+    {
+        var handler = new TestHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(Encoding.UTF8.GetBytes("ok"))
+        }, TimeSpan.FromMilliseconds(50));
+        using var httpClient = new HttpClient(handler);
+        await using var channel = new HttpClientChannel(_configProvider, _logger, new TestHttpClientFactory(httpClient));
+        var device = CreateHttpDevice("http-concurrent");
+
+        Assert.True(await channel.OpenAsync());
+        Assert.True(await channel.ConnectDeviceAsync(device));
+
+        var payload = Encoding.UTF8.GetBytes("payload");
+        var sends = Enumerable.Range(0, 20)
+            .Select(_ => channel.SendAsync(device.DeviceId, payload))
+            .ToArray();
+        var results = await Task.WhenAll(sends);
+
+        Assert.All(results, result => Assert.Equal(payload.Length, result));
+        Assert.Equal(20, handler.RequestCount);
+        Assert.True(handler.MaxConcurrentRequests > 1);
+    }
+
+    private static DeviceInfo CreateHttpDevice(string deviceId)
+    {
+        return new DeviceInfo
+        {
+            DeviceId = deviceId,
+            CommunicationType = CommunicationType.Http,
+            ConnectionMode = ConnectionMode.Client,
+            ExtendedProperties = new Dictionary<string, object>
+            {
+                ["Url"] = $"https://api.example.test/devices/{deviceId}",
+                ["Method"] = "POST"
+            }
+        };
+    }
+
     private static int GetFreeTcpPort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -302,13 +488,23 @@ public class SocketChannelIntegrationTests
 
     private sealed class TestConfigurationProvider : IConfigurationProvider
     {
-        private readonly SdkConfig _config = new()
-        {
-            Global = new GlobalConfig
+        private readonly SdkConfig _config;
+
+        public TestConfigurationProvider()
+            : this(new SdkConfig
             {
-                ConnectionTimeout = 3000
-            }
-        };
+                Global = new GlobalConfig
+                {
+                    ConnectionTimeout = 3000
+                }
+            })
+        {
+        }
+
+        public TestConfigurationProvider(SdkConfig config)
+        {
+            _config = config;
+        }
 
         public SdkConfig GetConfig() => _config;
         public Task<SdkConfig> LoadConfigAsync(string filePath) => Task.FromResult(_config);
@@ -372,6 +568,83 @@ public class SocketChannelIntegrationTests
         public void Fatal(string message, Exception? exception = null)
         {
             Log(LogLevel.Fatal, message, exception);
+        }
+    }
+
+    private sealed class TestHttpClientFactory : IHttpClientFactory
+    {
+        private readonly HttpClient _httpClient;
+
+        public TestHttpClientFactory(HttpClient httpClient)
+        {
+            _httpClient = httpClient;
+        }
+
+        public HttpClient CreateClient(string name)
+        {
+            return _httpClient;
+        }
+    }
+
+    private sealed class TestHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, HttpResponseMessage> _responseFactory;
+        private readonly TimeSpan _delay;
+        private int _activeRequests;
+        private int _maxConcurrentRequests;
+        private int _requestCount;
+
+        public TestHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory, TimeSpan delay = default)
+        {
+            _responseFactory = responseFactory;
+            _delay = delay;
+        }
+
+        public HttpMethod? RequestMethod { get; private set; }
+        public Uri? RequestUri { get; private set; }
+        public byte[] RequestBody { get; private set; } = Array.Empty<byte>();
+        public HttpRequestHeaders RequestHeaders { get; private set; } = default!;
+        public int RequestCount => Volatile.Read(ref _requestCount);
+        public int MaxConcurrentRequests => Volatile.Read(ref _maxConcurrentRequests);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var activeRequests = Interlocked.Increment(ref _activeRequests);
+            Interlocked.Increment(ref _requestCount);
+            UpdateMaxConcurrentRequests(activeRequests);
+            try
+            {
+                RequestMethod = request.Method;
+                RequestUri = request.RequestUri;
+                RequestHeaders = request.Headers;
+                RequestBody = request.Content == null
+                    ? Array.Empty<byte>()
+                    : await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+
+                if (_delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(_delay, cancellationToken).ConfigureAwait(false);
+                }
+
+                return _responseFactory(request);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeRequests);
+            }
+        }
+
+        private void UpdateMaxConcurrentRequests(int activeRequests)
+        {
+            while (true)
+            {
+                var current = Volatile.Read(ref _maxConcurrentRequests);
+                if (activeRequests <= current ||
+                    Interlocked.CompareExchange(ref _maxConcurrentRequests, activeRequests, current) == current)
+                {
+                    return;
+                }
+            }
         }
     }
 }

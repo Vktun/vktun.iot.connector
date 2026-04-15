@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Serial</PackageId>
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Serial - 串口通信组件库，提供完整的串口通信功能，支持 RS232/RS485 等串行通信接口。
 
@@ -39,10 +39,11 @@ await channel.ConnectDeviceAsync(device);
 await channel.SendAsync(device.DeviceId, data);</Description>
     <PackageTags>IoT;Connector;Serial;SerialPort;RS232;RS485;COM;Communication;Hardware</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="README.md" Pack="false" Condition="Exists('README.md')" />
+    <None Update="README.md" Pack="true" PackagePath="" Condition="Exists('README.md')" />
   </ItemGroup>
 
   <ItemGroup>

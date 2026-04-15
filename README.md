@@ -195,6 +195,17 @@ byte lrc = CrcCalculator.Lrc(data);
 dotnet add package Vktun.IoT.Connector
 ```
 
+## Documentation Index
+
+| Document | Purpose |
+| --- | --- |
+| [Implementation status and stub notes](Docs/实现状态与桩功能说明.md) | Marks limited, test-only, or demo-only capabilities |
+| [New protocol onboarding guide](Docs/新增协议标准接入指南.md) | Standard workflow for parser, template, test, and documentation work |
+| [HTTP/MQTT NuGet guide](Docs/HTTP-MQTT通道NuGet使用指南.md) | Registration, device fields, and minimal examples for HTTP/MQTT |
+| [NuGet installation matrix](Docs/NuGet安装矩阵与依赖关系.md) | Recommended main package and subpackage installation paths |
+| [Protocol template field reference](Docs/协议模板字段说明.md) | Common template fields, point fields, and protocol-specific fields |
+| [Device onboarding flow](Docs/新增设备接入流程.md) | End-to-end process from device information to field validation |
+
 ### Basic Usage
 
 ```csharp

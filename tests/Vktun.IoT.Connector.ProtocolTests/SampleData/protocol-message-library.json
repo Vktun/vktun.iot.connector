@@ -1,0 +1,120 @@
+{
+  "Version": 1,
+  "Description": "Protocol request/response replay samples used by regression tests.",
+  "Cases": [
+    {
+      "Id": "modbus-tcp-read-holding-registers",
+      "ProtocolId": "Sample_ModbusTcp",
+      "ProtocolName": "Sample Modbus TCP",
+      "ProtocolType": "ModbusTcp",
+      "CommandName": "ReadHoldingRegisters",
+      "CommandParameters": {
+        "Address": 0,
+        "Quantity": 2
+      },
+      "RequestHex": "000100000006010300000002",
+      "ResponseHex": "00010000000701030400FA0258",
+      "ExpectedDeviceId": "ModbusTCP_Slave_1",
+      "ExpectedPointCount": 2,
+      "ExpectedPoints": [
+        {
+          "PointName": "Temperature",
+          "Value": 25.0
+        },
+        {
+          "PointName": "Humidity",
+          "Value": 60.0
+        }
+      ],
+      "Definition": {
+        "ProtocolId": "Sample_ModbusTcp",
+        "ProtocolName": "Sample Modbus TCP",
+        "ModbusType": "Tcp",
+        "SlaveId": 1,
+        "ByteOrder": "BigEndian",
+        "WordOrder": "HighWordFirst",
+        "Points": [
+          {
+            "PointName": "Temperature",
+            "RegisterType": "HoldingRegister",
+            "Address": 0,
+            "Quantity": 1,
+            "DataType": "UInt16",
+            "Ratio": 0.1,
+            "Unit": "C",
+            "MinValue": -40,
+            "MaxValue": 120
+          },
+          {
+            "PointName": "Humidity",
+            "RegisterType": "HoldingRegister",
+            "Address": 1,
+            "Quantity": 1,
+            "DataType": "UInt16",
+            "Ratio": 0.1,
+            "Unit": "%RH",
+            "MinValue": 0,
+            "MaxValue": 100
+          }
+        ]
+      }
+    },
+    {
+      "Id": "modbus-rtu-read-holding-registers",
+      "ProtocolId": "Sample_ModbusRtu",
+      "ProtocolName": "Sample Modbus RTU",
+      "ProtocolType": "ModbusRtu",
+      "CommandName": "ReadHoldingRegisters",
+      "CommandParameters": {
+        "Address": 0,
+        "Quantity": 2
+      },
+      "RequestHex": "010300000002C40B",
+      "ResponseHex": "01030400FA0258DA98",
+      "ExpectedDeviceId": "Modbus_Slave_1",
+      "ExpectedPointCount": 2,
+      "ExpectedPoints": [
+        {
+          "PointName": "Temperature",
+          "Value": 25.0
+        },
+        {
+          "PointName": "Humidity",
+          "Value": 60.0
+        }
+      ],
+      "Definition": {
+        "ProtocolId": "Sample_ModbusRtu",
+        "ProtocolName": "Sample Modbus RTU",
+        "ModbusType": "Rtu",
+        "SlaveId": 1,
+        "ByteOrder": "BigEndian",
+        "WordOrder": "HighWordFirst",
+        "Points": [
+          {
+            "PointName": "Temperature",
+            "RegisterType": "HoldingRegister",
+            "Address": 0,
+            "Quantity": 1,
+            "DataType": "UInt16",
+            "Ratio": 0.1,
+            "Unit": "C",
+            "MinValue": -40,
+            "MaxValue": 120
+          },
+          {
+            "PointName": "Humidity",
+            "RegisterType": "HoldingRegister",
+            "Address": 1,
+            "Quantity": 1,
+            "DataType": "UInt16",
+            "Ratio": 0.1,
+            "Unit": "%RH",
+            "MinValue": 0,
+            "MaxValue": 100
+          }
+        ]
+      }
+    }
+  ]
+}

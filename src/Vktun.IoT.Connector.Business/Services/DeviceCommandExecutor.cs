@@ -16,6 +16,7 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
     private readonly IProtocolParserFactory _parserFactory;
     private readonly IConfigurationProvider _configurationProvider;
     private readonly ILogger _logger;
+    private readonly IResourceMonitor? _resourceMonitor;
     private readonly ConcurrentDictionary<string, DeviceRuntimeContext> _contexts = new();
 
     public event EventHandler<DataReceivedEventArgs>? DataReceived;
@@ -24,12 +25,14 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         ICommunicationChannelFactory channelFactory,
         IProtocolParserFactory parserFactory,
         IConfigurationProvider configurationProvider,
-        ILogger logger)
+        ILogger logger,
+        IResourceMonitor? resourceMonitor = null)
     {
         _channelFactory = channelFactory;
         _parserFactory = parserFactory;
         _configurationProvider = configurationProvider;
         _logger = logger;
+        _resourceMonitor = resourceMonitor;
     }
 
     public async Task<bool> ConnectAsync(DeviceInfo device, CancellationToken cancellationToken = default)
@@ -82,6 +85,9 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         protocolConfig.ChannelId = channel.ChannelId;
         var context = new DeviceRuntimeContext(device, protocolConfig, parser, channel);
         _contexts[device.DeviceId] = context;
+        _resourceMonitor?.TrackChannel(channel);
+        _resourceMonitor?.RegisterDevice(device, channel.ChannelId, protocolConfig.ProtocolId, protocolConfig.ProtocolType);
+        _logger.Info($"Device connected. {FormatLogContext(context, taskId: string.Empty)}");
         return true;
     }
 
@@ -89,11 +95,15 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
     {
         if (_contexts.TryRemove(deviceId, out var context))
         {
+            var channelId = context.Channel.ChannelId;
             context.Channel.DataReceived -= OnChannelDataReceived;
             context.Channel.ErrorOccurred -= OnChannelError;
             await context.Channel.DisconnectDeviceAsync(deviceId).ConfigureAwait(false);
             await context.Channel.CloseAsync().ConfigureAwait(false);
+            _resourceMonitor?.UnregisterDevice(deviceId);
+            _resourceMonitor?.UntrackChannel(channelId);
             context.Dispose();
+            _logger.Info($"Device disconnected. {FormatLogContext(context, taskId: string.Empty)}");
         }
     }
 
@@ -131,8 +141,8 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
                 };
             }
 
-            var response = await SendAndReceiveAsync(context, requestData, command.Timeout, cancellationToken).ConfigureAwait(false);
-            var parsed = TryParseResponse(context, response);
+            var response = await SendAndReceiveAsync(context, requestData, command.Timeout, command.CommandId, cancellationToken).ConfigureAwait(false);
+            var parsed = TryParseResponse(context, response, requestData, command.CommandId);
 
             return new CommandResult
             {
@@ -250,13 +260,15 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
             var request = new DeviceCommand
             {
                 DeviceId = context.Device.DeviceId,
+                CommandId = command.CommandId,
                 CommandName = GetReadCommandName(group.Key),
                 Timeout = command.Timeout
             };
             request.Parameters["Address"] = startAddress;
             request.Parameters["Quantity"] = quantity;
 
-            var response = await SendAndReceiveAsync(context, context.Parser.Pack(request, context.ProtocolConfig), command.Timeout, cancellationToken).ConfigureAwait(false);
+            var requestPayload = context.Parser.Pack(request, context.ProtocolConfig);
+            var response = await SendAndReceiveAsync(context, requestPayload, command.Timeout, command.CommandId, cancellationToken).ConfigureAwait(false);
             allResponses.AddRange(response);
 
             var adjustedConfig = CloneProtocolConfig(context.ProtocolConfig);
@@ -294,6 +306,10 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
             if (parsed != null)
             {
                 allPoints.AddRange(parsed.DataItems);
+            }
+            else
+            {
+                RecordParseFailure(context, requestPayload, response, command.CommandId, adjustedConfig.ConfigVersion, "Modbus parser returned no data.");
             }
         }
 
@@ -345,8 +361,8 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         };
 
         var payload = s7Parser.BuildReadCommand(request, s7Config);
-        var response = await SendAndReceiveAsync(context, payload, command.Timeout, cancellationToken).ConfigureAwait(false);
-        var parsed = TryParseResponse(context, response);
+        var response = await SendAndReceiveAsync(context, payload, command.Timeout, command.CommandId, cancellationToken).ConfigureAwait(false);
+        var parsed = TryParseResponse(context, response, payload, command.CommandId);
 
         return new CommandResult
         {
@@ -373,8 +389,8 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         }
 
         var payload = iec104Parser.BuildInterrogationCommand(config.CommonAddress, (byte)IEC104QualifierOfInterrogation.Station_Interrogation);
-        var response = await SendAndReceiveAsync(context, payload, command.Timeout, cancellationToken).ConfigureAwait(false);
-        var parsed = TryParseResponse(context, response);
+        var response = await SendAndReceiveAsync(context, payload, command.Timeout, command.CommandId, cancellationToken).ConfigureAwait(false);
+        var parsed = TryParseResponse(context, response, payload, command.CommandId);
 
         return new CommandResult
         {
@@ -387,25 +403,70 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         };
     }
 
-    private async Task<byte[]> SendAndReceiveAsync(DeviceRuntimeContext context, byte[] requestData, int timeoutMs, CancellationToken cancellationToken)
+    private async Task<byte[]> SendAndReceiveAsync(
+        DeviceRuntimeContext context,
+        byte[] requestData,
+        int timeoutMs,
+        string taskId,
+        CancellationToken cancellationToken)
     {
         var timeout = timeoutMs > 0 ? timeoutMs : context.Device.ConnectionMode == ConnectionMode.Client ? context.GetDefaultTimeout() : 5000;
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(timeout);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         var responseSource = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
         context.PendingResponse = responseSource;
 
-        var sentBytes = await context.Channel.SendAsync(context.Device.DeviceId, requestData, timeoutCts.Token).ConfigureAwait(false);
-        if (sentBytes <= 0)
-        {
-            context.PendingResponse = null;
-            throw new InvalidOperationException($"No bytes were sent to device {context.Device.DeviceId}.");
-        }
-
         try
         {
-            return await responseSource.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+            _logger.Debug($"Request frame sent. {FormatLogContext(context, taskId)} bytes={requestData.Length} frame={FormatFrame(requestData)}");
+
+            var sentBytes = await context.Channel.SendAsync(context.Device.DeviceId, requestData, timeoutCts.Token).ConfigureAwait(false);
+            if (sentBytes <= 0)
+            {
+                throw new InvalidOperationException($"No bytes were sent to device {context.Device.DeviceId}.");
+            }
+
+            var response = await responseSource.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+            stopwatch.Stop();
+            RecordOperation(context, taskId, requestData, response, stopwatch.Elapsed, success: true);
+            _logger.Debug($"Response frame received. {FormatLogContext(context, taskId)} bytes={response.Length} elapsedMs={stopwatch.ElapsedMilliseconds} frame={FormatFrame(response)}");
+            return response;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+            RecordOperation(
+                context,
+                taskId,
+                requestData,
+                Array.Empty<byte>(),
+                stopwatch.Elapsed,
+                success: false,
+                timedOut: true,
+                errorMessage: $"Request timed out after {timeout}ms.");
+            _logger.Warning($"Request timed out. {FormatLogContext(context, taskId)} timeoutMs={timeout} elapsedMs={stopwatch.ElapsedMilliseconds}");
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            RecordOperation(
+                context,
+                taskId,
+                requestData,
+                Array.Empty<byte>(),
+                stopwatch.Elapsed,
+                success: false,
+                exceptionOccurred: true,
+                errorMessage: ex.Message);
+            _logger.Error($"Request failed. {FormatLogContext(context, taskId)} elapsedMs={stopwatch.ElapsedMilliseconds} error={ex.Message}", ex);
+            throw;
         }
         finally
         {
@@ -423,23 +484,34 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         return context.Parser.Pack(command, context.ProtocolConfig);
     }
 
-    private DeviceData? TryParseResponse(DeviceRuntimeContext context, byte[] responseData)
+    private DeviceData? TryParseResponse(DeviceRuntimeContext context, byte[] responseData, byte[] requestData, string taskId)
     {
-        if (!context.Parser.Validate(responseData, context.ProtocolConfig))
+        try
         {
+            if (!context.Parser.Validate(responseData, context.ProtocolConfig))
+            {
+                RecordParseFailure(context, requestData, responseData, taskId, context.ProtocolConfig.ConfigVersion, "Protocol validation failed.");
+                return null;
+            }
+
+            var parsed = context.Parser.Parse(responseData, context.ProtocolConfig).FirstOrDefault();
+            if (parsed == null)
+            {
+                RecordParseFailure(context, requestData, responseData, taskId, context.ProtocolConfig.ConfigVersion, "Parser returned no data.");
+                return null;
+            }
+
+            parsed.DeviceId = context.Device.DeviceId;
+            parsed.ChannelId = context.Channel.ChannelId;
+            context.Device.LastDataTime = parsed.CollectTime;
+            return parsed;
+        }
+        catch (Exception ex)
+        {
+            RecordParseFailure(context, requestData, responseData, taskId, context.ProtocolConfig.ConfigVersion, ex.Message);
+            _logger.Error($"Response parse failed. {FormatLogContext(context, taskId)} error={ex.Message}", ex);
             return null;
         }
-
-        var parsed = context.Parser.Parse(responseData, context.ProtocolConfig).FirstOrDefault();
-        if (parsed == null)
-        {
-            return null;
-        }
-
-        parsed.DeviceId = context.Device.DeviceId;
-        parsed.ChannelId = context.Channel.ChannelId;
-        context.Device.LastDataTime = parsed.CollectTime;
-        return parsed;
     }
 
     private void OnChannelDataReceived(object? sender, DataReceivedEventArgs e)
@@ -457,7 +529,85 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         if (_contexts.TryGetValue(e.DeviceId, out var context))
         {
             context.PendingResponse?.TrySetException(e.Exception ?? new InvalidOperationException(e.Message));
+            _logger.Error($"Channel error. {FormatLogContext(context, taskId: string.Empty)} error={e.Message}", e.Exception);
         }
+    }
+
+    private void RecordOperation(
+        DeviceRuntimeContext context,
+        string taskId,
+        byte[] requestData,
+        byte[] responseData,
+        TimeSpan elapsedTime,
+        bool success,
+        bool timedOut = false,
+        bool exceptionOccurred = false,
+        string? errorMessage = null)
+    {
+        _resourceMonitor?.RecordOperation(new ResourceOperationRecord
+        {
+            Timestamp = DateTime.Now,
+            DeviceId = context.Device.DeviceId,
+            ChannelId = context.Channel.ChannelId,
+            ProtocolId = context.ProtocolConfig.ProtocolId,
+            ProtocolType = context.ProtocolConfig.ProtocolType,
+            TaskId = taskId,
+            ElapsedTime = elapsedTime,
+            Success = success,
+            TimedOut = timedOut,
+            ExceptionOccurred = exceptionOccurred,
+            ErrorMessage = errorMessage,
+            ConfigVersion = context.ProtocolConfig.ConfigVersion,
+            RequestBytes = requestData.Length,
+            ResponseBytes = responseData.Length,
+            RequestFrame = requestData,
+            ResponseFrame = responseData
+        });
+    }
+
+    private void RecordParseFailure(
+        DeviceRuntimeContext context,
+        byte[] requestData,
+        byte[] responseData,
+        string taskId,
+        int configVersion,
+        string parseError)
+    {
+        _resourceMonitor?.RecordDiagnosticTrace(new DiagnosticTrace
+        {
+            Timestamp = DateTime.Now,
+            DeviceId = context.Device.DeviceId,
+            ChannelId = context.Channel.ChannelId,
+            ProtocolId = context.ProtocolConfig.ProtocolId,
+            ProtocolType = context.ProtocolConfig.ProtocolType,
+            TaskId = taskId,
+            ConfigVersion = configVersion,
+            Success = false,
+            RequestBytes = requestData.Length,
+            ResponseBytes = responseData.Length,
+            RequestFrameHex = Convert.ToHexString(requestData),
+            ResponseFrameHex = Convert.ToHexString(responseData),
+            ParseError = parseError
+        });
+
+        _logger.Warning($"Response parse failed. {FormatLogContext(context, taskId)} parseError={parseError} requestFrame={FormatFrame(requestData)} responseFrame={FormatFrame(responseData)}");
+    }
+
+    private static string FormatLogContext(DeviceRuntimeContext context, string taskId)
+    {
+        return $"deviceId={context.Device.DeviceId} channelId={context.Channel.ChannelId} protocolId={context.ProtocolConfig.ProtocolId} protocolType={context.ProtocolConfig.ProtocolType} taskId={taskId} configVersion={context.ProtocolConfig.ConfigVersion}";
+    }
+
+    private static string FormatFrame(byte[] frame, int maxBytes = 128)
+    {
+        if (frame.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var visibleBytes = frame.Length <= maxBytes ? frame : frame[..maxBytes];
+        var hex = Convert.ToHexString(visibleBytes);
+        return frame.Length <= maxBytes ? hex : $"{hex}...(+{frame.Length - maxBytes} bytes)";
     }
 
     private static ProtocolConfig CloneProtocolConfig(ProtocolConfig source)

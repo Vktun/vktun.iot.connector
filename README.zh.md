@@ -32,6 +32,62 @@ Vktun.IoT.Connector/
         └── Program.cs                     # 上位机采集演示程序
 ```
 
+## NuGet 快速接入
+
+推荐外部项目优先安装主包：
+
+```bash
+dotnet add package Vktun.IoT.Connector
+```
+
+使用默认运行时注册：
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;
+using Vktun.IoT.Connector.Core.Interfaces;
+
+var services = new ServiceCollection();
+
+services.AddVktunIoTConnector(options =>
+{
+    options.ConfigureSdk = config =>
+    {
+        config.Global.MaxConcurrentConnections = 1000;
+        config.Http.MaxConnectionsPerServer = 512;
+    };
+});
+
+await using var provider = services.BuildServiceProvider();
+var collector = provider.GetRequiredService<IIoTDataCollector>();
+
+await collector.InitializeAsync();
+await collector.StartAsync();
+```
+
+只注册 HTTP 或 MQTT 通道：
+
+```csharp
+services.AddVktunHttpChannel();
+
+services.AddVktunMqttChannel(mqtt =>
+{
+    mqtt.Server = "127.0.0.1";
+    mqtt.Port = 1883;
+    mqtt.ClientId = "gateway-001";
+});
+```
+
+## 文档索引
+
+| 文档 | 用途 |
+| --- | --- |
+| [实现状态与桩功能说明](Docs/实现状态与桩功能说明.md) | 标记仍受限或仅用于测试/演示的能力 |
+| [新增协议标准接入指南](Docs/新增协议标准接入指南.md) | 新增协议的代码、模板、测试和文档流程 |
+| [HTTP/MQTT 通道 NuGet 使用指南](Docs/HTTP-MQTT通道NuGet使用指南.md) | HTTP/MQTT 注册、设备字段和最小示例 |
+| [NuGet 安装矩阵与依赖关系](Docs/NuGet安装矩阵与依赖关系.md) | 主包和子包的推荐安装路径 |
+| [协议模板字段说明](Docs/协议模板字段说明.md) | 模板公共字段、点位字段和协议字段说明 |
+| [新增设备接入流程](Docs/新增设备接入流程.md) | 从设备信息收集到现场联调的完整流程 |
+
 ## 架构设计
 
 ### 五层架构

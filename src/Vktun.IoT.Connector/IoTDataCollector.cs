@@ -57,10 +57,13 @@ public class IoTDataCollector : IIoTDataCollector
                 existing.Global = config.Global;
                 existing.Tcp = config.Tcp;
                 existing.Udp = config.Udp;
+                existing.Http = config.Http;
                 existing.Serial = config.Serial;
                 existing.Wireless = config.Wireless;
                 existing.ThreadPool = config.ThreadPool;
                 existing.Resource = config.Resource;
+                existing.Cache = config.Cache;
+                existing.Persistence = config.Persistence;
             }).ConfigureAwait(false);
         }
 
@@ -186,6 +189,12 @@ public class IoTDataCollector : IIoTDataCollector
         };
     }
 
+    public Task<ResourceSnapshot> GetResourceSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return _resourceMonitor.GetSnapshotAsync();
+    }
+
     public Task<SdkConfig> GetConfigAsync()
     {
         return Task.FromResult(_configProvider.GetConfig());
@@ -198,10 +207,13 @@ public class IoTDataCollector : IIoTDataCollector
             existing.Global = config.Global;
             existing.Tcp = config.Tcp;
             existing.Udp = config.Udp;
+            existing.Http = config.Http;
             existing.Serial = config.Serial;
             existing.Wireless = config.Wireless;
             existing.ThreadPool = config.ThreadPool;
             existing.Resource = config.Resource;
+            existing.Cache = config.Cache;
+            existing.Persistence = config.Persistence;
         });
     }
 

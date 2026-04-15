@@ -4,6 +4,8 @@ namespace Vktun.IoT.Connector.Core.Enums
     {
         Tcp,
         Udp,
+        Http,
+        Mqtt,
         Serial,
         Can,
         FourG,
@@ -94,5 +96,42 @@ namespace Vktun.IoT.Connector.Core.Enums
         Warning,
         Error,
         Fatal
+    }
+
+    public enum DataCachePurpose
+    {
+        RecentValue,
+        HistoryValue,
+        ReplayValue
+    }
+
+    public enum DataCacheBackend
+    {
+        Memory,
+        Redis
+    }
+
+    public enum DataPersistenceBackend
+    {
+        None,
+        Memory,
+        File,
+        Sqlite,
+        External
+    }
+
+    public enum DataPersistenceBackpressureStrategy
+    {
+        Wait,
+        RejectWrite,
+        DropOldest,
+        DropNewest
+    }
+
+    public enum DataPersistenceFailureStrategy
+    {
+        CacheOnly,
+        RejectWrite,
+        Throw
     }
 }

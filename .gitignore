@@ -306,3 +306,6 @@ scripts/*
 artifacts/
 nupkgs/
 .dotnet-home/.dotnet/*
+**/.dotnet-home/.dotnet/*
+
+iot.connector.ps1

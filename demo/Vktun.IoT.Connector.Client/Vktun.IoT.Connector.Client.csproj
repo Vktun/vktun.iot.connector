@@ -6,6 +6,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
     <AssemblyName>Vktun.IoT.Connector.Client</AssemblyName>
     <RootNamespace>Vktun.IoT.Connector.Client</RootNamespace>
   </PropertyGroup>

@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Protocol</PackageId>
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Protocol - 工业协议解析器库，支持多种主流工业通信协议的数据解析和打包。
 
@@ -36,12 +36,13 @@
 var parser = new ModbusRtuParser(logger);
 var data = parser.Parse(rawBytes, config);
 var command = parser.PackCommand(cmd, config);</Description>
-    <PackageTags>IoT;Connector;Protocol;Modbus;IEC104;S7;OPCUA;BACnet;CANopen;Industrial;Parser;Automation</PackageTags>
+    <PackageTags>IoT;Connector;Protocol;Modbus;IEC104;S7;OPCUA;BACnet;CANopen;HTTP;Industrial;Parser;Automation</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="README.md" Pack="false" Condition="Exists('README.md')" />
+    <None Update="README.md" Pack="true" PackagePath="" Condition="Exists('README.md')" />
   </ItemGroup>
 
   <ItemGroup>

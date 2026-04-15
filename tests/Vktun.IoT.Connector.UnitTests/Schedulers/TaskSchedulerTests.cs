@@ -1,5 +1,6 @@
 using Moq;
 using Vktun.IoT.Connector.Configuration.Providers;
+using CommandResult = Vktun.IoT.Connector.Core.Models.CommandResult;
 using Scheduler = Vktun.IoT.Connector.Concurrency.Schedulers.TaskScheduler;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;

@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector</PackageId>
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector - 完整的 IoT 设备连接 SDK，支持多种工业协议和通信方式，提供设备管理、数据采集、云端连接等一站式解决方案。
 
@@ -32,7 +32,8 @@
 支持的通信方式：
 - TCP/UDP：网络通信
 - 串口：RS232/RS485
-- MQTT：消息队列
+- HTTP：高并发 HTTP 设备/API 接入
+- MQTT：消息队列发布/订阅
 
 使用方式：
 1. 安装 NuGet 包：dotnet add package Vktun.IoT.Connector
@@ -57,23 +58,24 @@ await collector.AddDeviceAsync(new DeviceInfo
 });
 
 var data = await collector.CollectDataAsync("device-001");</Description>
-    <PackageTags>IoT;Connector;SDK;Modbus;IEC104;S7;OPCUA;BACnet;Industrial;Automation;DeviceManagement;DataCollection;AzureIoTHub;AWSIoT</PackageTags>
+    <PackageTags>IoT;Connector;SDK;Modbus;IEC104;S7;OPCUA;BACnet;HTTP;MQTT;Industrial;Automation;DeviceManagement;DataCollection;AzureIoTHub;AWSIoT</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="" />
+    <None Update="README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Vktun.IoT.Connector.Core\Vktun.IoT.Connector.Core.csproj" />
-    <ProjectReference Include="..\Vktun.IoT.Connector.Business\Vktun.IoT.Connector.Business.csproj">
-      <PrivateAssets>all</PrivateAssets>
-    </ProjectReference>
-    <ProjectReference Include="..\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj">
-      <PrivateAssets>all</PrivateAssets>
-    </ProjectReference>
+    <ProjectReference Include="..\Vktun.IoT.Connector.Business\Vktun.IoT.Connector.Business.csproj" />
+    <ProjectReference Include="..\Vktun.IoT.Connector.Configuration\Vktun.IoT.Connector.Configuration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
   </ItemGroup>
 
 </Project>

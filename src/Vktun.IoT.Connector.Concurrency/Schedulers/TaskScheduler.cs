@@ -244,6 +244,7 @@ public class TaskScheduler : ITaskScheduler
         var stopwatch = Stopwatch.StartNew();
         CommandResult? lastResult = null;
         Exception? lastException = null;
+        taskItem.Command.CommandId = taskItem.TaskId;
 
         for (int attempt = 0; attempt <= _maxRetryCount; attempt++)
         {
@@ -263,17 +264,19 @@ public class TaskScheduler : ITaskScheduler
                 if (attempt > 0)
                 {
                     var delay = CalculateRetryDelay(attempt);
-                    _logger.Info($"Retrying task {taskItem.TaskId} (attempt {attempt}/{_maxRetryCount}), delay {delay}ms");
+                    _logger.Info($"Retrying task. taskId={taskItem.TaskId} deviceId={taskItem.Command.DeviceId} attempt={attempt} maxAttempts={_maxRetryCount} delayMs={delay}");
                     await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 }
 
                 var device = await ResolveDeviceAsync(taskItem.Command.DeviceId, cancellationToken).ConfigureAwait(false);
+                _logger.Debug($"Executing task. taskId={taskItem.TaskId} deviceId={device.DeviceId} protocolId={device.ProtocolId} commandName={taskItem.Command.CommandName}");
                 var result = await _commandExecutor.ExecuteAsync(taskItem.Command, device, cancellationToken).ConfigureAwait(false);
                 result.CommandId = taskItem.TaskId;
                 result.ElapsedTime = stopwatch.Elapsed;
 
                 if (result.Success)
                 {
+                    _logger.Debug($"Task completed. taskId={taskItem.TaskId} deviceId={device.DeviceId} elapsedMs={stopwatch.ElapsedMilliseconds}");
                     return result;
                 }
 
@@ -282,6 +285,7 @@ public class TaskScheduler : ITaskScheduler
 
                 if (!IsRetryableFailure(result))
                 {
+                    _logger.Warning($"Task failed without retry. taskId={taskItem.TaskId} deviceId={device.DeviceId} elapsedMs={stopwatch.ElapsedMilliseconds} error={result.ErrorMessage}");
                     return result;
                 }
             }

@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Concurrency</PackageId>
-    <Version>0.0.3</Version>
+    <Version>0.0.4</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Concurrency - 并发处理组件库，提供高性能的异步队列、任务调度和资源监控功能。
 
@@ -36,10 +36,11 @@ var taskId = await scheduler.SubmitTaskAsync(command);
 var result = await scheduler.GetTaskResultAsync(taskId);</Description>
     <PackageTags>IoT;Connector;Concurrency;Async;TaskScheduler;ResourceMonitor;Queue;Threading;Performance</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="README.md" Pack="false" Condition="Exists('README.md')" />
+    <None Update="README.md" Pack="true" PackagePath="" Condition="Exists('README.md')" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,7 +13,10 @@ dotnet add package Vktun.IoT.Connector.Protocol
 - Modbus RTU/TCP 协议解析
 - IEC104 协议解析
 - S7 协议解析
-- OPC UA 协议解析
-- BACnet 协议解析
-- CANopen 协议解析
 - 自定义协议支持
+
+## 接入与模板文档
+
+- [新增协议标准接入指南](../../Docs/新增协议标准接入指南.md)
+- [协议模板字段说明](../../Docs/协议模板字段说明.md)
+- [实现状态与桩功能说明](../../Docs/实现状态与桩功能说明.md)

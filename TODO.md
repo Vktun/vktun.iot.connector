@@ -28,6 +28,8 @@
 - 已支持按 `ProtocolType + ProtocolVersion + DeviceModel` 组合选择解析器。
 - 已支持插件式协议装载。
 - 已补齐 TCP 请求响应交互模型、UDP 会话管理和超时下线策略、串口帧间隔和多设备从站管理。
+- 已新增 HTTP Client 通道，支持 `IHttpClientFactory` 与连接池配置，用于高并发 HTTP 设备/API 接入。
+- 已新增 MQTT 专用易用 API，并将 `MqttChannel` 接入真实 MQTT broker 发布/订阅链路。
 - 已统一通道层事件（连接、断连、收包、发包、异常、统计）。
 - 已建立协议回归测试工程和基础回归用例。
 - 已设计统一地址/点位抽象模型。
@@ -81,6 +83,9 @@
 - [x] TCP 通道补齐更完整的请求响应交互模型
 - [x] UDP 通道补齐更稳定的设备识别、会话管理、超时下线策略
 - [x] 串口链路补齐帧间隔、读写超时、轮询、共享串口、多设备从站管理
+- [x] HTTP Client 通道接入 `IHttpClientFactory`，支持高并发请求、连接池和响应事件回传
+- [x] MQTT 通道接入真实 MQTT broker，支持发布、订阅、QoS、retain、自动重连和订阅恢复
+- [x] 为 MQTT 提供面向 NuGet 使用者的强类型发布/订阅客户端 API
 - [x] 统一通道层事件：连接、断连、收包、发包、异常、统计
 
 ## P1
@@ -90,8 +95,8 @@
 - [x] 以 `Vktun.IoT.Connector.DeviceMock` 为基础建立自动化回归测试工程
 - [x] 为 Modbus TCP、Modbus RTU、S7、IEC104 建立最小可运行回归用例
 - [x] 补齐边界测试：空帧、短帧、CRC 错误、长度错误、异常码、字节序错误
-- [ ] 建立协议样例报文库，支持请求/响应回放
-- [ ] 建立模板兼容性测试，确保模板变更不会破坏旧协议
+- [x] 建立协议样例报文库，支持请求/响应回放
+- [x] 建立模板兼容性测试，确保模板变更不会破坏旧协议
 
 ### 7. 设计统一地址/点位抽象
 
@@ -125,31 +130,60 @@
 - [ ] 支持设备与协议模板的绑定关系管理
 - [x] 支持配置合法性校验报告
 
+### 11. HTTP/MQTT 通道产品化
+
+- [x] 新增 `CommunicationType.Http` 与 `CommunicationType.Mqtt`，避免使用 TCP 语义承载 HTTP/MQTT 场景
+- [x] 新增 `HttpProtocolParser`，支持 HTTP 原始响应透传与现有 `DeviceCommandExecutor` 链路兼容
+- [x] 新增 `IMqttMessagingClient`、`MqttPublishOptions`、`MqttSubscribeOptions` 等强类型 MQTT API
+- [x] 增加 HTTP 通道单元测试、MQTT topic filter 测试和本机 MQTT broker 集成测试
+- [ ] 为 HTTP 设备配置补充 README 示例：`Url`、`BaseUrl`、`Path`、`Method`、`Headers`、`ContentType`
+- [ ] 为 MQTT 设备配置补充 README 示例：Broker、ClientId、认证、TLS、QoS、retain、订阅主题
+- [ ] 明确 `UseInMemoryTransport` 仅用于测试/本地开发，避免 NuGet 使用者误用于生产
+- [x] 为 MQTT 增加异常场景回归：broker 不可达、认证失败、订阅失败、重连后恢复订阅
+- [x] 为 HTTP 增加异常场景回归：非 2xx 状态码、超时、取消、响应体为空、并发压测
+
+### 12. NuGet 包定位与发布治理
+
+- [x] 明确 `Vktun.IoT.Connector` 作为推荐安装的主入口门面包
+- [x] 明确 `Vktun.IoT.Connector.Core` 作为接口、模型、枚举和公共契约包
+- [x] 明确 `Vktun.IoT.Connector.Protocol` 作为协议解析和命令打包能力包
+- [x] 明确 `Vktun.IoT.Connector.Communication` 作为 TCP/UDP/HTTP/MQTT 通道实现包
+- [x] 明确 `Vktun.IoT.Connector.Serial` 作为可选串口通信扩展包
+- [x] 修正主包对运行时实现项目的 NuGet 依赖透传，避免消费者安装主包后缺少实现程序集
+- [x] 为已有子包 README 配置 `PackageReadmeFile`，提升 NuGet 包页可读性
+- [x] 将 `Vktun.IoT.Connector.Business` 长期规划为 `Runtime` 或 `Hosting` 定位，避免以 Business 命名作为开发者主入口
+- [x] 评估将 Azure/AWS 云连接器从运行时编排层拆分为独立云平台包
+- [x] 评估将 `Communication` 按传输方式拆分为 TCP/UDP、HTTP、MQTT 等可选包，减少无关依赖
+- [x] 为主包增加 DI 注册入口示例，例如 `AddVktunIoTConnector`、`AddVktunHttpChannel`、`AddVktunMqttChannel`
+- [x] 新增 NuGet 包规划与拆分评估文档：`Docs/NuGet包规划与拆分评估.md`
+
 ## P2
 
-### 11. 完善运行态能力
+### 13. 完善运行态能力
 
-- [ ] 资源监控接入真实连接数、线程数、Socket 数、吞吐量
-- [ ] 增加设备维度和协议维度的指标统计
-- [ ] 增加慢请求、超时率、异常率、重连率统计
-- [ ] 为日志增加结构化字段：设备 ID、通道 ID、协议 ID、任务 ID
-- [ ] 增加问题定位链路：请求帧、响应帧、解析错误、配置版本
+- [x] 资源监控接入真实连接数、线程数、Socket 数、吞吐量
+- [x] 增加设备维度和协议维度的指标统计
+- [x] 增加慢请求、超时率、异常率、重连率统计
+- [x] 为日志增加结构化字段：设备 ID、通道 ID、协议 ID、任务 ID
+- [x] 增加问题定位链路：请求帧、响应帧、解析错误、配置版本
 
-### 12. 完善缓存与持久化策略
+### 14. 完善缓存与持久化策略
 
-- [ ] 明确缓存用途：最近值、历史值、回放值
-- [ ] 区分内存缓存与持久化存储
-- [ ] 增加背压策略与写入失败降级策略
-- [ ] 支持可选存储后端：内存、文件、SQLite、外部数据库
+- [x] 明确缓存用途：最近值、历史值、回放值
+- [x] 区分内存缓存与持久化存储
+- [x] 增加背压策略与写入失败降级策略
+- [x] 支持可选存储后端：内存、文件、SQLite、外部数据库
 
-### 13. 文档与工程一致性治理
+### 15. 文档与工程一致性治理
 
 - [x] 修复 `TODO.md` 与短期路线图文档编码
-- [ ] 统一 README、README.zh、模板文件、Demo 文档的编码
-- [ ] 删除或标记仍为桩实现的功能，避免误导使用者
-- [ ] 为新增协议编写标准接入文档
-- [ ] 为模板编写字段说明文档和示例文档
-- [ ] 建立"从新增设备到完成接入"的标准流程说明
+- [x] 统一 README、README.zh、模板文件、Demo 文档的编码
+- [x] 删除或标记仍为桩实现的功能，避免误导使用者
+- [x] 为新增协议编写标准接入文档
+- [x] 为 HTTP/MQTT 通道编写 NuGet 使用指南和最小可运行示例
+- [x] 为 NuGet 主包和子包补齐安装矩阵、依赖关系图和推荐安装路径
+- [x] 为模板编写字段说明文档和示例文档
+- [x] 建立"从新增设备到完成接入"的标准流程说明
 
 ## 当前验证结论
 
@@ -157,6 +191,10 @@
 - [x] `demo/Vktun.IoT.Connector.Demo` 构建通过
 - [x] `demo/Vktun.IoT.Connector.DeviceMock` 构建通过
 - [x] `tests/Vktun.IoT.Connector.UnitTests` 构建通过
+- [x] HTTP 通道单元测试通过
+- [x] MQTT 本机 broker 发布/订阅集成测试通过
+- [x] HTTP/MQTT 异常场景回归测试通过
+- [x] `tests/Vktun.IoT.Connector.UnitTests` 通过：68 passed
 - [x] `tests/Vktun.IoT.Connector.ProtocolTests` 构建通过
 - [ ] 真实设备联调验证
 - [ ] 自动化回归验证
