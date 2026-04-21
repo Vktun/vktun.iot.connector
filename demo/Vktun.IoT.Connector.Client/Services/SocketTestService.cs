@@ -18,6 +18,7 @@ public class SocketTestService : ISocketTestService
     private ICommunicationChannel? _channel;
     private DeviceInfo? _device;
     private ConnectionConfig? _currentConfig;
+    private string? _activeSendDeviceId;
 
     public bool IsConnected => _channel?.IsConnected == true && _device != null;
     public ConnectionConfig? CurrentConfig => _currentConfig;
@@ -58,6 +59,15 @@ public class SocketTestService : ISocketTestService
                 return false;
             }
 
+            if (device.ConnectionMode == ConnectionMode.Server)
+            {
+                _channel = channel;
+                _device = device;
+                _currentConfig = config;
+                EmitLog($"Listening: {device.CommunicationType}/{device.ConnectionMode} on {FormatListenEndpoint(device)}.");
+                return true;
+            }
+
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(config.Timeout > 0 ? config.Timeout : 3000);
 
@@ -73,6 +83,7 @@ public class SocketTestService : ISocketTestService
             _channel = channel;
             _device = device;
             _currentConfig = config;
+            _activeSendDeviceId = device.DeviceId;
             EmitLog($"Connected: {device.CommunicationType}/{device.ConnectionMode}.");
             return true;
         }
@@ -113,7 +124,8 @@ public class SocketTestService : ISocketTestService
             return 0;
         }
 
-        var sent = await _channel.SendAsync(_device.DeviceId, data, cancellationToken).ConfigureAwait(false);
+        var deviceId = _activeSendDeviceId ?? _device.DeviceId;
+        var sent = await _channel.SendAsync(deviceId, data, cancellationToken).ConfigureAwait(false);
         EmitLog($"Sent {sent} bytes.");
         return sent;
     }
@@ -142,6 +154,7 @@ public class SocketTestService : ISocketTestService
         _channel = null;
         _device = null;
         _currentConfig = null;
+        _activeSendDeviceId = null;
     }
 
     private void OnChannelDataReceived(object? sender, Vktun.IoT.Connector.Core.Interfaces.DataReceivedEventArgs e)
@@ -157,11 +170,17 @@ public class SocketTestService : ISocketTestService
 
     private void OnChannelDeviceConnected(object? sender, DeviceConnectedEventArgs e)
     {
-        EmitLog($"Device connected: {e.DeviceId}");
+        _activeSendDeviceId = e.DeviceId;
+        EmitLog($"Client connected: {e.DeviceId}, remote={e.Device.IpAddress}:{e.Device.Port}");
     }
 
     private void OnChannelDeviceDisconnected(object? sender, DeviceDisconnectedEventArgs e)
     {
+        if (_activeSendDeviceId == e.DeviceId)
+        {
+            _activeSendDeviceId = null;
+        }
+
         EmitLog($"Device disconnected: {e.DeviceId}. Reason: {e.Reason}");
     }
 
@@ -203,10 +222,28 @@ public class SocketTestService : ISocketTestService
         return (device.CommunicationType, device.ConnectionMode) switch
         {
             (CommunicationType.Tcp, ConnectionMode.Client) => new TcpClientChannel(_configProvider, _logger),
-            (CommunicationType.Tcp, ConnectionMode.Server) => new TcpServerChannel(device.LocalIpAddress, device.LocalPort, _configProvider, _logger),
-            (CommunicationType.Udp, _) => new UdpChannel(device.ConnectionMode, device.LocalIpAddress, device.LocalPort, _configProvider, _logger),
+            (CommunicationType.Tcp, ConnectionMode.Server) => new TcpServerChannel(
+                device.LocalIpAddress,
+                device.LocalPort,
+                _configProvider,
+                _logger,
+                allowAnonymousAcceptedClients: true),
+            (CommunicationType.Udp, _) => new UdpChannel(
+                device.ConnectionMode,
+                device.LocalIpAddress,
+                device.LocalPort,
+                _configProvider,
+                _logger,
+                allowAnonymousAcceptedClients: device.ConnectionMode == ConnectionMode.Server),
             _ => throw new NotSupportedException($"Unsupported socket mode: {device.CommunicationType}/{device.ConnectionMode}")
         };
+    }
+
+    private static string FormatListenEndpoint(DeviceInfo device)
+    {
+        var ipAddress = string.IsNullOrWhiteSpace(device.LocalIpAddress) ? "0.0.0.0" : device.LocalIpAddress;
+        var port = device.LocalPort > 0 ? device.LocalPort : device.Port;
+        return $"{ipAddress}:{port}";
     }
 
     private void EmitLog(string message)
@@ -214,4 +251,3 @@ public class SocketTestService : ISocketTestService
         LogMessage?.Invoke(this, $"[{DateTime.Now:HH:mm:ss}] {message}");
     }
 }
-

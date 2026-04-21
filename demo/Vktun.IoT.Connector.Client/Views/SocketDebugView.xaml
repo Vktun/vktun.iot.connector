@@ -14,11 +14,11 @@
 
         <GroupBox Grid.Row="0" Header="Socket Connection" Style="{StaticResource CardGroupBox}">
             <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="120"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="120"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="120"/>
                     <ColumnDefinition Width="Auto"/>
@@ -30,43 +30,43 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0" Text="Type:" Style="{StaticResource LabelTextBlock}"/>
-                <ComboBox Grid.Column="1"
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Type:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox Grid.Row="0" Grid.Column="1"
                           ItemsSource="{Binding CommunicationTypes}"
                           SelectedItem="{Binding SelectedCommunicationType}"
                           Style="{StaticResource InputComboBox}"/>
 
-                <TextBlock Grid.Column="2" Text="Mode:" Style="{StaticResource LabelTextBlock}"/>
-                <ComboBox Grid.Column="3"
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="Mode:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox Grid.Row="0" Grid.Column="3"
                           ItemsSource="{Binding ConnectionModes}"
                           SelectedItem="{Binding SelectedConnectionMode}"
                           Style="{StaticResource InputComboBox}"/>
 
-                <TextBlock Grid.Column="4" Text="Remote IP:" Style="{StaticResource LabelTextBlock}"/>
-                <TextBox Grid.Column="5"
+                <TextBlock Grid.Row="0" Grid.Column="4" Text="Remote IP:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Grid.Row="0" Grid.Column="5"
                          Text="{Binding IpAddress, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource InputTextBox}"/>
 
-                <TextBlock Grid.Column="6" Text="Remote Port:" Style="{StaticResource LabelTextBlock}"/>
-                <TextBox Grid.Column="7"
+                <TextBlock Grid.Row="0" Grid.Column="6" Text="Remote Port:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Grid.Row="0" Grid.Column="7"
                          Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource InputTextBox}"/>
 
-                <TextBlock Grid.Column="8" Text="Local IP:" Style="{StaticResource LabelTextBlock}"/>
-                <TextBox Grid.Column="9"
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Local IP:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Grid.Row="1" Grid.Column="1"
                          Text="{Binding LocalIpAddress, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource InputTextBox}"/>
 
-                <TextBlock Grid.Column="10" Text="Local Port:" Style="{StaticResource LabelTextBlock}"/>
-                <TextBox Grid.Column="11"
+                <TextBlock Grid.Row="1" Grid.Column="2" Text="Local Port:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Grid.Row="1" Grid.Column="3"
                          Text="{Binding LocalPort, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource InputTextBox}"/>
 
-                <StackPanel Grid.Column="12" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="Connect"
+                <StackPanel Grid.Row="1" Grid.Column="4" Grid.ColumnSpan="5" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="{Binding ManualConnectButtonText}"
                             Command="{Binding ConnectCommand}"
-                            Style="{StaticResource PrimaryButton}" Width="80"/>
-                    <Button Content="Disconnect"
+                            Style="{StaticResource PrimaryButton}" Width="88"/>
+                    <Button Content="断开"
                             Command="{Binding DisconnectCommand}"
                             Style="{StaticResource SecondaryButton}" Width="80"/>
                 </StackPanel>
@@ -149,4 +149,3 @@
         </GroupBox>
     </Grid>
 </UserControl>
-

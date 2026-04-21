@@ -13,6 +13,7 @@ public class UdpChannel : CommunicationChannelBase
     private readonly ConnectionMode _mode;
     private readonly IPAddress _localAddress;
     private readonly int _localPort;
+    private readonly bool _allowAnonymousAcceptedClients;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
     private readonly ConcurrentDictionary<string, UdpSession> _sessions = new();
     private readonly TimeSpan _sessionTimeout;
@@ -33,11 +34,13 @@ public class UdpChannel : CommunicationChannelBase
         string localIpAddress,
         int localPort,
         IConfigurationProvider configProvider,
-        ILogger logger) : base(configProvider, logger)
+        ILogger logger,
+        bool allowAnonymousAcceptedClients = false) : base(configProvider, logger)
     {
         _mode = mode;
         _localAddress = string.IsNullOrWhiteSpace(localIpAddress) ? IPAddress.Any : IPAddress.Parse(localIpAddress);
         _localPort = localPort;
+        _allowAnonymousAcceptedClients = allowAnonymousAcceptedClients;
         _sessionTimeout = TimeSpan.FromMilliseconds(configProvider.GetConfig().Udp.DeviceOfflineTimeout);
         ChannelId = $"Udp_{mode}_{_localAddress}_{localPort}";
     }
@@ -363,7 +366,41 @@ public class UdpChannel : CommunicationChannelBase
 
     private bool TryBindServerConnection(IPEndPoint remoteEndPoint)
     {
-        if (_expectedDevice == null || _connections.ContainsKey(_expectedDevice.DeviceId))
+        if (_expectedDevice == null)
+        {
+            if (!_allowAnonymousAcceptedClients)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(ResolveDeviceId(remoteEndPoint)))
+            {
+                return false;
+            }
+
+            var deviceId = CreateAcceptedDeviceId(remoteEndPoint);
+            var acceptedConnection = new DeviceConnection
+            {
+                DeviceId = deviceId,
+                RemoteEndPoint = remoteEndPoint,
+                ConnectTime = DateTime.Now,
+                LastActiveTime = DateTime.Now
+            };
+            _connections[acceptedConnection.DeviceId] = acceptedConnection;
+            _sessions[acceptedConnection.DeviceId] = new UdpSession
+            {
+                DeviceId = acceptedConnection.DeviceId,
+                RemoteEndPoint = remoteEndPoint,
+                LastActiveTime = DateTime.Now
+            };
+
+            var acceptedDevice = CreateAcceptedDevice(deviceId, remoteEndPoint);
+            OnDeviceConnected(acceptedConnection.DeviceId, acceptedDevice);
+            _logger.Info($"Accepted UDP client {acceptedConnection.DeviceId}: {remoteEndPoint}.");
+            return true;
+        }
+
+        if (_connections.ContainsKey(_expectedDevice.DeviceId))
         {
             return false;
         }
@@ -399,6 +436,31 @@ public class UdpChannel : CommunicationChannelBase
         OnDeviceConnected(connection.DeviceId, connectedDevice);
         _logger.Info($"Bound UDP device {connection.DeviceId} to remote endpoint {remoteEndPoint}.");
         return true;
+    }
+
+    private string CreateAcceptedDeviceId(IPEndPoint remoteEndPoint)
+    {
+        var baseId = $"UDP_CLIENT_{remoteEndPoint.Address}_{remoteEndPoint.Port}".Replace('.', '_').Replace(':', '_');
+        return _connections.ContainsKey(baseId)
+            ? $"{baseId}_{Guid.NewGuid():N}"
+            : baseId;
+    }
+
+    private DeviceInfo CreateAcceptedDevice(string deviceId, IPEndPoint remoteEndPoint)
+    {
+        return new DeviceInfo
+        {
+            DeviceId = deviceId,
+            DeviceName = $"UDP Client {remoteEndPoint}",
+            CommunicationType = CommunicationType.Udp,
+            ConnectionMode = ConnectionMode.Server,
+            IpAddress = remoteEndPoint.Address.ToString(),
+            Port = remoteEndPoint.Port,
+            LocalIpAddress = _localAddress.Equals(IPAddress.Any) ? string.Empty : _localAddress.ToString(),
+            LocalPort = _localPort,
+            ProtocolType = global::Vktun.IoT.Connector.Core.Enums.ProtocolType.Custom,
+            ProtocolId = "UdpServerAcceptedClient"
+        };
     }
 
     private string ResolveDeviceId(IPEndPoint remoteEndPoint)

@@ -28,6 +28,7 @@ public class SocketDebugViewModel : BindableBase, INavigationAware
     private string _sendPayload = "Hello";
     private bool _isHexMode;
     private bool _isConnected;
+    private bool _isConnecting;
     private string _logMessages = string.Empty;
 
     public ObservableCollection<CommunicationType> CommunicationTypes { get; } = new()
@@ -127,9 +128,7 @@ public class SocketDebugViewModel : BindableBase, INavigationAware
         set
         {
             SetProperty(ref _isConnected, value);
-            ConnectCommand.RaiseCanExecuteChanged();
-            DisconnectCommand.RaiseCanExecuteChanged();
-            SendCommand.RaiseCanExecuteChanged();
+            RaiseCommandStatesChanged();
             
             if (value && AutoSend)
             {
@@ -141,6 +140,21 @@ public class SocketDebugViewModel : BindableBase, INavigationAware
             }
         }
     }
+
+    public bool IsConnecting
+    {
+        get => _isConnecting;
+        set
+        {
+            if (SetProperty(ref _isConnecting, value))
+            {
+                RaiseCommandStatesChanged();
+                RaisePropertyChanged(nameof(ManualConnectButtonText));
+            }
+        }
+    }
+
+    public string ManualConnectButtonText => IsConnecting ? "连接中..." : "手动连接";
 
     public string LogMessages
     {
@@ -159,29 +173,44 @@ public class SocketDebugViewModel : BindableBase, INavigationAware
         _socketTestService.LogMessage += OnServiceLogMessage;
         _socketTestService.DataReceived += OnServiceDataReceived;
 
-        ConnectCommand = new DelegateCommand(OnConnect, () => !IsConnected);
-        DisconnectCommand = new DelegateCommand(OnDisconnect, () => IsConnected);
-        SendCommand = new DelegateCommand(OnSend, () => IsConnected);
+        ConnectCommand = new DelegateCommand(OnConnect, () => !IsConnected && !IsConnecting);
+        DisconnectCommand = new DelegateCommand(OnDisconnect, () => IsConnected && !IsConnecting);
+        SendCommand = new DelegateCommand(OnSend, () => IsConnected && !IsConnecting);
         ClearLogCommand = new DelegateCommand(OnClearLog);
     }
 
     private async void OnConnect()
     {
-        var config = new ConnectionConfig
+        if (IsConnecting)
         {
-            ProtocolType = ProtocolType.Custom,
-            CommunicationType = SelectedCommunicationType,
-            ConnectionMode = SelectedConnectionMode,
-            IpAddress = IpAddress,
-            Port = Port,
-            LocalIpAddress = LocalIpAddress,
-            LocalPort = LocalPort,
-            Timeout = Timeout > 0 ? Timeout : 3000,
-            SendInterval = SendInterval > 0 ? SendInterval : 1000,
-            AutoSend = AutoSend
-        };
+            return;
+        }
 
-        IsConnected = await _socketTestService.ConnectAsync(config).ConfigureAwait(true);
+        IsConnecting = true;
+        AppendLog("手动连接开始。");
+
+        try
+        {
+            var config = new ConnectionConfig
+            {
+                ProtocolType = ProtocolType.Custom,
+                CommunicationType = SelectedCommunicationType,
+                ConnectionMode = SelectedConnectionMode,
+                IpAddress = IpAddress,
+                Port = Port,
+                LocalIpAddress = LocalIpAddress,
+                LocalPort = LocalPort,
+                Timeout = Timeout > 0 ? Timeout : 3000,
+                SendInterval = SendInterval > 0 ? SendInterval : 1000,
+                AutoSend = AutoSend
+            };
+
+            IsConnected = await _socketTestService.ConnectAsync(config).ConfigureAwait(true);
+        }
+        finally
+        {
+            IsConnecting = false;
+        }
     }
 
     private async void OnDisconnect()
@@ -233,6 +262,13 @@ public class SocketDebugViewModel : BindableBase, INavigationAware
     {
         _logBuilder.AppendLine(message);
         LogMessages = _logBuilder.ToString();
+    }
+
+    private void RaiseCommandStatesChanged()
+    {
+        ConnectCommand.RaiseCanExecuteChanged();
+        DisconnectCommand.RaiseCanExecuteChanged();
+        SendCommand.RaiseCanExecuteChanged();
     }
 
     private static byte[] ParseHexPayload(string payload)
@@ -314,4 +350,3 @@ public class SocketDebugViewModel : BindableBase, INavigationAware
     {
     }
 }
-

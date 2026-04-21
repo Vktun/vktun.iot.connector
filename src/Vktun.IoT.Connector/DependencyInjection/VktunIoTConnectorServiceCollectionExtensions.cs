@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Vktun.IoT.Connector;
+using Vktun.IoT.Connector.Business.Cloud;
 using Vktun.IoT.Connector.Business.Factories;
 using Vktun.IoT.Connector.Business.Managers;
 using Vktun.IoT.Connector.Business.Providers;
@@ -136,6 +137,60 @@ public static class VktunIoTConnectorServiceCollectionExtensions
             serviceProvider.GetRequiredService<IConfigurationProvider>(),
             serviceProvider.GetRequiredService<ILogger>(),
             serviceProvider.GetRequiredService<MqttConfig>()));
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds an explicitly configured Azure IoT Hub connector. This registration is opt-in and not part of the default runtime facade.
+    /// </summary>
+    /// <param name="services">The service collection to add registrations to.</param>
+    /// <param name="configureAzure">Optional Azure IoT Hub settings.</param>
+    /// <param name="configure">Optional shared registration options.</param>
+    /// <returns>The same service collection for chaining.</returns>
+    public static IServiceCollection AddVktunAzureIoTHubConnector(
+        this IServiceCollection services,
+        Action<AzureIoTHubConfig>? configureAzure = null,
+        Action<VktunIoTConnectorOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var options = CreateOptions(configure);
+        var azureConfig = new AzureIoTHubConfig();
+        configureAzure?.Invoke(azureConfig);
+
+        services.AddVktunCoreInfrastructure(options);
+        services.TryAddSingleton(azureConfig);
+        services.TryAddSingleton(serviceProvider => new AzureIoTHubConnector(
+            serviceProvider.GetRequiredService<AzureIoTHubConfig>(),
+            serviceProvider.GetRequiredService<ILogger>()));
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds an explicitly configured AWS IoT connector. This registration is opt-in and not part of the default runtime facade.
+    /// </summary>
+    /// <param name="services">The service collection to add registrations to.</param>
+    /// <param name="configureAws">Optional AWS IoT settings.</param>
+    /// <param name="configure">Optional shared registration options.</param>
+    /// <returns>The same service collection for chaining.</returns>
+    public static IServiceCollection AddVktunAwsIoTConnector(
+        this IServiceCollection services,
+        Action<AwsIoTConfig>? configureAws = null,
+        Action<VktunIoTConnectorOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var options = CreateOptions(configure);
+        var awsConfig = new AwsIoTConfig();
+        configureAws?.Invoke(awsConfig);
+
+        services.AddVktunCoreInfrastructure(options);
+        services.TryAddSingleton(awsConfig);
+        services.TryAddSingleton(serviceProvider => new AwsIoTConnector(
+            serviceProvider.GetRequiredService<AwsIoTConfig>(),
+            serviceProvider.GetRequiredService<ILogger>()));
 
         return services;
     }

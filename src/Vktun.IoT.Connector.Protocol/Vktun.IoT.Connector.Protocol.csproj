@@ -8,35 +8,12 @@
     <PackageId>Vktun.IoT.Connector.Protocol</PackageId>
     <Version>0.0.4</Version>
     <Authors>Vktun</Authors>
-    <Description>Vktun IoT Connector Protocol - 工业协议解析器库，支持多种主流工业通信协议的数据解析和打包。
+    <Description>Vktun IoT Connector Protocol - 工业协议解析器库。
 
-主要功能：
-- Modbus RTU 解析器（ModbusRtuParser）：Modbus RTU 协议的数据解析和命令打包
-- Modbus TCP 解析器（ModbusTcpParser）：Modbus TCP 协议的数据解析和命令打包
-- S7 协议解析器（S7ProtocolParser）：西门子 S7 系列 PLC 通信协议
-- IEC104 协议解析器（IEC104ProtocolParser）：IEC 60870-5-104 远动协议
-- OPC UA 协议解析器（OpcUaProtocolParser）：OPC UA 工业通信标准
-- BACnet 协议解析器（BacnetProtocolParser）：楼宇自动化协议
-- CANopen 协议解析器（CanopenProtocolParser）：CAN 总线高层协议
-- 自定义协议解析器（CustomProtocolParser）：支持用户自定义协议
-
-支持的协议特性：
-- 数据解析：从原始字节数据解析为结构化数据点
-- 命令打包：将命令参数打包为协议帧
-- 数据验证：CRC 校验、帧格式验证
-- 字节序处理：大端序、小端序、字序转换
-- 数据类型转换：整数、浮点数、布尔值等
-
-使用方式：
-1. 安装 NuGet 包：dotnet add package Vktun.IoT.Connector.Protocol
-2. 创建协议解析器实例
-3. 使用解析器解析数据或打包命令
-
-示例代码：
-var parser = new ModbusRtuParser(logger);
-var data = parser.Parse(rawBytes, config);
-var command = parser.PackCommand(cmd, config);</Description>
-    <PackageTags>IoT;Connector;Protocol;Modbus;IEC104;S7;OPCUA;BACnet;CANopen;HTTP;Industrial;Parser;Automation</PackageTags>
+当前已验证：Modbus RTU/TCP、自定义协议，以及模板兼容性回归。
+受限可用：S7、IEC104。
+实验性：OPC UA、BACnet、CANopen。</Description>
+    <PackageTags>IoT;Connector;Protocol;Modbus;IEC104;S7;HTTP;Industrial;Parser;Automation;CustomProtocol</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

@@ -1,8 +1,23 @@
 # Vktun.IoT.Connector
 
-Industrial device data acquisition SDK, supporting multiple communication methods and protocol parsing, with high concurrency, high availability, scalability, and cross-platform features.
+Industrial device data acquisition SDK with a DI-based runtime facade, communication channels, protocol parsers, templates, and demo tooling. The currently verified paths focus on Modbus RTU/TCP, HTTP/MQTT, and custom protocol scenarios; other protocol claims should be evaluated against the maturity notes in the docs.
 
 **Language**: [English](README.md) | [中文](README.zh.md)
+
+## Current Capability Snapshot
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Facade + DI entry | Verified | `IIoTDataCollector`, `AddVktunIoTConnector`, `AddVktunHttpChannel`, and `AddVktunMqttChannel` have build/test coverage. |
+| TCP / UDP / Serial channels | Limited usable | Real send/receive chains are integrated, but real device validation is still required. |
+| HTTP / MQTT channels | Verified for SDK integration | Minimal documentation, DI registration, and tests are present; production still depends on environment health checks. |
+| Modbus RTU / TCP | Verified | Parser, packing, template compatibility, and regression tests are present. |
+| Custom protocol | Limited usable | JSON-driven parsing is available; field validation still depends on real sample frames. |
+| S7 | Limited usable | Use specialized command APIs rather than the generic `BuildRequest` stub entry. |
+| IEC104 | Limited usable | Parser entry exists, but command modeling remains limited for full ASDU control scenarios. |
+| OPC UA / BACnet / CANopen | Experimental | Present in code, currently routed through `ProtocolType.Custom`, and not production-ready. |
+| Azure / AWS cloud connectors | Opt-in only | Explicit DI registrations are available for targeted integration, but they are not part of the default `AddVktunIoTConnector` runtime path. |
+| DeviceMock | Development only | Suitable for development and regression, not a production gateway service. |
 
 ## Project Structure
 
@@ -206,38 +221,44 @@ dotnet add package Vktun.IoT.Connector
 | [Protocol template field reference](Docs/协议模板字段说明.md) | Common template fields, point fields, and protocol-specific fields |
 | [Device onboarding flow](Docs/新增设备接入流程.md) | End-to-end process from device information to field validation |
 
+## Production Notes
+
+- The repo currently targets `net10.0` and the verified build/test baseline uses the preview SDK.
+- Check [Implementation status and stub notes](Docs/实现状态与桩功能说明.md) before promising protocol scope externally.
+- `UseInMemoryTransport` is only for tests and local development.
+- `DeviceMock` is a development/regression tool, not a production gateway service.
+- `OPC UA`, `BACnet`, and `CANopen` are experimental in the current codebase.
+
 ### Basic Usage
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
 using Vktun.IoT.Connector;
-using Vktun.IoT.Connector.Business.Managers;
-using Vktun.IoT.Connector.Configuration.Providers;
+using Vktun.IoT.Connector.Core.Enums;
+using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
 
-// Initialize
-var logger = new ConsoleLogger();
-var configProvider = new JsonConfigurationProvider(logger);
-var deviceManager = new DeviceManager(sessionManager, configProvider, logger);
+var services = new ServiceCollection();
+services.AddVktunIoTConnector();
 
-var collector = new IoTDataCollector(
-    deviceManager,
-    sessionManager,
-    taskScheduler,
-    resourceMonitor,
-    configProvider,
-    dataProvider,
-    heartbeatManager,
-    logger);
+await using var provider = services.BuildServiceProvider();
+var collector = provider.GetRequiredService<IIoTDataCollector>();
+
+await collector.InitializeAsync();
+await collector.StartAsync();
 
 // Configure device
 var device = new DeviceInfo
 {
     DeviceId = "DEVICE_001",
     DeviceName = "Temperature & Humidity Sensor",
-    CommunicationType = CommunicationType.Serial,
-    SerialPort = "COM3",
-    BaudRate = 9600,
-    ProtocolType = ProtocolType.ModbusRtu
+    CommunicationType = CommunicationType.Tcp,
+    ConnectionMode = ConnectionMode.Client,
+    IpAddress = "192.168.1.10",
+    Port = 502,
+    ProtocolType = ProtocolType.ModbusTcp,
+    ProtocolId = "modbus-template-001",
+    ProtocolVersion = "1.0.0"
 };
 
 await collector.AddDeviceAsync(device);
@@ -249,16 +270,12 @@ var data = await collector.CollectDataAsync(device.DeviceId);
 
 ## Client Tool
 
-The SDK includes a comprehensive client testing tool for industrial protocol testing and debugging.
+The SDK includes a WPF client workbench for protocol debugging and demo scenarios.
 
-### Supported Protocols
+### Current Workbench Scope
 
-- **Modbus RTU** - Serial Modbus protocol testing
-- **Modbus TCP** - TCP Modbus protocol testing  
-- **Siemens S7** - Siemens PLC S7 protocol testing
-- **Mitsubishi** - Mitsubishi PLC protocol testing
-- **Omron** - Omron PLC protocol testing
-- **Serial Port** - General serial communication testing
+- **Verified paths**: Modbus RTU, Modbus TCP, Siemens S7, and serial debugging.
+- **Demo-level pages**: Mitsubishi and Omron pages exist in the client, but they are not covered by the current DeviceMock regression loop or documented as production-ready.
 
 ### Client Screenshots
 
@@ -303,7 +320,7 @@ Vktun.IoT.Connector.Serial (Independent Package)
 
 ## Technical Features
 
-- **.NET 10.0**: Latest framework support
+- **.NET 10.0**: Current target framework, verified with the preview SDK baseline in this repo
 - **Async Programming**: async/await + IOCP model
 - **Dependency Injection**: Interface decoupling, testable
 - **Plugin Design**: Extensible protocol parsers

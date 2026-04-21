@@ -210,6 +210,58 @@ public class SocketChannelIntegrationTests
     }
 
     [Fact]
+    public async Task TcpServerChannel_ConnectDeviceAsync_ShouldBindPendingClientFromBacklogByDefault()
+    {
+        var port = GetFreeTcpPort();
+        await using var channel = new TcpServerChannel(string.Empty, port, _configProvider, _logger);
+        var receivedTcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DataReceived += (_, args) => receivedTcs.TrySetResult(args.Data);
+
+        var device = new DeviceInfo
+        {
+            DeviceId = "tcp-server-pending-device",
+            CommunicationType = CommunicationType.Tcp,
+            ConnectionMode = ConnectionMode.Server,
+            LocalPort = port,
+            IpAddress = "127.0.0.1"
+        };
+
+        Assert.True(await channel.OpenAsync());
+
+        using var remoteClient = new TcpClient();
+        await remoteClient.ConnectAsync(IPAddress.Loopback, port);
+
+        Assert.True(await channel.ConnectDeviceAsync(device).WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.Equal(1, channel.ActiveConnections);
+
+        using var stream = remoteClient.GetStream();
+        var inbound = Encoding.UTF8.GetBytes("pending-client");
+        await stream.WriteAsync(inbound);
+        var received = await receivedTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal(inbound, received);
+    }
+
+    [Fact]
+    public async Task TcpServerChannel_OpenAsync_ShouldListenAndRecordAcceptedClient()
+    {
+        var port = GetFreeTcpPort();
+        await using var channel = new TcpServerChannel(string.Empty, port, _configProvider, _logger, allowAnonymousAcceptedClients: true);
+        var connectedTcs = new TaskCompletionSource<DeviceConnectedEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DeviceConnected += (_, args) => connectedTcs.TrySetResult(args);
+
+        Assert.True(await channel.OpenAsync());
+
+        using var remoteClient = new TcpClient();
+        await remoteClient.ConnectAsync(IPAddress.Loopback, port);
+
+        var connected = await connectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.StartsWith("TCP_CLIENT_127_0_0_1_", connected.DeviceId);
+        Assert.Equal("127.0.0.1", connected.Device.IpAddress);
+        Assert.True(connected.Device.Port > 0);
+        Assert.Equal(1, channel.ActiveConnections);
+    }
+
+    [Fact]
     public async Task UdpClientChannel_ShouldSendAndReceive()
     {
         using var remote = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
@@ -287,6 +339,67 @@ public class SocketChannelIntegrationTests
 
         var reply = await remote.ReceiveAsync();
         Assert.Equal(outbound, reply.Buffer);
+    }
+
+    [Fact]
+    public async Task UdpServerChannel_ShouldIgnorePacketsUntilDeviceIsRegisteredByDefault()
+    {
+        var port = GetFreeUdpPort();
+        await using var channel = new UdpChannel(ConnectionMode.Server, string.Empty, port, _configProvider, _logger);
+        var receivedTcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DataReceived += (_, args) => receivedTcs.TrySetResult(args.Data);
+
+        var device = new DeviceInfo
+        {
+            DeviceId = "udp-server-pending-device",
+            CommunicationType = CommunicationType.Udp,
+            ConnectionMode = ConnectionMode.Server,
+            LocalPort = port,
+            IpAddress = "127.0.0.1"
+        };
+
+        Assert.True(await channel.OpenAsync());
+
+        using var remote = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        var earlyPayload = Encoding.UTF8.GetBytes("early-packet");
+        await remote.SendAsync(earlyPayload, earlyPayload.Length, new IPEndPoint(IPAddress.Loopback, port));
+        await Task.Delay(150);
+
+        Assert.Equal(0, channel.ActiveConnections);
+
+        var connectTask = channel.ConnectDeviceAsync(device);
+        var bindingPayload = Encoding.UTF8.GetBytes("binding-packet");
+        await remote.SendAsync(bindingPayload, bindingPayload.Length, new IPEndPoint(IPAddress.Loopback, port));
+
+        Assert.True(await connectTask.WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.Equal(1, channel.ActiveConnections);
+        var received = await receivedTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal(bindingPayload, received);
+    }
+
+    [Fact]
+    public async Task UdpServerChannel_OpenAsync_ShouldListenAndRecordFirstRemoteEndpoint()
+    {
+        var port = GetFreeUdpPort();
+        await using var channel = new UdpChannel(ConnectionMode.Server, string.Empty, port, _configProvider, _logger, allowAnonymousAcceptedClients: true);
+        var connectedTcs = new TaskCompletionSource<DeviceConnectedEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var receivedTcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DeviceConnected += (_, args) => connectedTcs.TrySetResult(args);
+        channel.DataReceived += (_, args) => receivedTcs.TrySetResult(args.Data);
+
+        Assert.True(await channel.OpenAsync());
+
+        using var remote = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        var payload = Encoding.UTF8.GetBytes("udp-listen-only");
+        await remote.SendAsync(payload, payload.Length, new IPEndPoint(IPAddress.Loopback, port));
+
+        var connected = await connectedTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        var received = await receivedTcs.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.StartsWith("UDP_CLIENT_127_0_0_1_", connected.DeviceId);
+        Assert.Equal("127.0.0.1", connected.Device.IpAddress);
+        Assert.True(connected.Device.Port > 0);
+        Assert.Equal(payload, received);
+        Assert.Equal(1, channel.ActiveConnections);
     }
 
     [Fact]

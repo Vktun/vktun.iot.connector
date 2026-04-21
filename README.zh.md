@@ -1,8 +1,23 @@
 # Vktun.IoT.Connector
 
-工业设备数据采集 SDK，支持多种通信方式和协议解析，具备高并发、高可用、可扩展、跨平台的特性。
+工业设备数据采集 SDK，提供 DI 门面、通信通道、协议解析、模板和示例工具。当前已验证路径聚焦 Modbus RTU/TCP、HTTP/MQTT 和自定义协议场景；其他协议能力请以文档中的成熟度说明为准。
 
 **语言**: [English](README.md) | [中文](README.zh.md)
+
+## 当前能力快照
+
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
+| 主门面 + DI 入口 | 已验证完整 | `IIoTDataCollector`、`AddVktunIoTConnector`、`AddVktunHttpChannel`、`AddVktunMqttChannel` 有构建和测试覆盖。 |
+| TCP / UDP / Serial 通道 | 受限可用 | 已接入真实收发链路，但真实设备联调仍然必需。 |
+| HTTP / MQTT 通道 | 已验证完整 | 有最小文档、DI 注册和测试；生产可用性仍依赖部署环境健康检查。 |
+| Modbus RTU / TCP | 已验证完整 | 解析、打包、模板兼容和回归测试都已具备。 |
+| 自定义协议 | 受限可用 | 已支持 JSON 驱动解析，但点位正确性仍依赖真实样例报文验证。 |
+| S7 | 受限可用 | 需要走专用读写命令入口，不应直接使用通用 `BuildRequest` 桩入口。 |
+| IEC104 | 受限可用 | 已有解析入口，但完整 ASDU 指令建模仍受限。 |
+| OPC UA / BACnet / CANopen | 实验性 | 代码存在，但当前通过 `ProtocolType.Custom` 路径归类，不应视为生产能力。 |
+| Azure / AWS 云连接器 | 显式接入 | 现在可通过专门 DI 扩展方法按需注册，但它们仍不属于 `AddVktunIoTConnector` 的默认运行时链路。 |
+| DeviceMock | 仅开发使用 | 适合开发和回归，不是生产网关服务。 |
 
 ## 项目结构
 
@@ -87,6 +102,15 @@ services.AddVktunMqttChannel(mqtt =>
 | [NuGet 安装矩阵与依赖关系](Docs/NuGet安装矩阵与依赖关系.md) | 主包和子包的推荐安装路径 |
 | [协议模板字段说明](Docs/协议模板字段说明.md) | 模板公共字段、点位字段和协议字段说明 |
 | [新增设备接入流程](Docs/新增设备接入流程.md) | 从设备信息收集到现场联调的完整流程 |
+
+## 生产使用注意事项
+
+- 当前目标框架是 `net10.0`，本仓库构建/测试基线依赖预览 SDK。
+- 对外宣称协议范围前，先阅读 [实现状态与桩功能说明](Docs/实现状态与桩功能说明.md)。
+- `UseInMemoryTransport` 仅用于测试和本地开发。
+- `DeviceMock` 是开发/回归工具，不是生产网关服务。
+- `OPC UA`、`BACnet`、`CANopen` 在当前代码库中属于实验性能力。
+- `AzureIoTHubConnector`、`AwsIoTConnector` 需要显式调用 `AddVktunAzureIoTHubConnector`、`AddVktunAwsIoTConnector` 才会注册。
 
 ## 架构设计
 
@@ -254,35 +278,33 @@ dotnet add package Vktun.IoT.Connector
 ### 基本使用
 
 ```csharp
+using Microsoft.Extensions.DependencyInjection;
 using Vktun.IoT.Connector;
-using Vktun.IoT.Connector.Business.Managers;
-using Vktun.IoT.Connector.Configuration.Providers;
+using Vktun.IoT.Connector.Core.Enums;
+using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
 
-// 初始化
-var logger = new ConsoleLogger();
-var configProvider = new JsonConfigurationProvider(logger);
-var deviceManager = new DeviceManager(sessionManager, configProvider, logger);
+var services = new ServiceCollection();
+services.AddVktunIoTConnector();
 
-var collector = new IoTDataCollector(
-    deviceManager,
-    sessionManager,
-    taskScheduler,
-    resourceMonitor,
-    configProvider,
-    dataProvider,
-    heartbeatManager,
-    logger);
+await using var provider = services.BuildServiceProvider();
+var collector = provider.GetRequiredService<IIoTDataCollector>();
+
+await collector.InitializeAsync();
+await collector.StartAsync();
 
 // 配置设备
 var device = new DeviceInfo
 {
     DeviceId = "DEVICE_001",
     DeviceName = "温湿度传感器",
-    CommunicationType = CommunicationType.Serial,
-    SerialPort = "COM3",
-    BaudRate = 9600,
-    ProtocolType = ProtocolType.ModbusRtu
+    CommunicationType = CommunicationType.Tcp,
+    ConnectionMode = ConnectionMode.Client,
+    IpAddress = "192.168.1.10",
+    Port = 502,
+    ProtocolType = ProtocolType.ModbusTcp,
+    ProtocolId = "modbus-template-001",
+    ProtocolVersion = "1.0.0"
 };
 
 await collector.AddDeviceAsync(device);
@@ -294,16 +316,12 @@ var data = await collector.CollectDataAsync(device.DeviceId);
 
 ## 客户端工具
 
-SDK 包含一个功能完善的客户端测试工具，用于工业协议测试和调试。
+SDK 包含一个面向协议调试和演示场景的 WPF 客户端工作台。
 
-### 支持的协议
+### 当前工作台范围
 
-- **Modbus RTU** - 串口 Modbus 协议测试
-- **Modbus TCP** - TCP Modbus 协议测试  
-- **西门子 S7** - 西门子 PLC S7 协议测试
-- **三菱** - 三菱 PLC 协议测试
-- **欧姆龙** - 欧姆龙 PLC 协议测试
-- **串口调试** - 通用串口通信测试
+- **已验证路径**：Modbus RTU、Modbus TCP、西门子 S7、串口调试。
+- **演示级页面**：客户端中包含三菱和欧姆龙页面，但当前没有 DeviceMock 回归闭环，也不应直接视为生产已验证能力。
 
 ### 客户端截图
 
@@ -348,7 +366,7 @@ Vktun.IoT.Connector.Serial (独立包)
 
 ## 技术特性
 
-- **.NET 10.0**: 最新框架支持
+- **.NET 10.0**: 当前目标框架，仓库基线使用预览 SDK 验证
 - **异步编程**: async/await + IOCP 模型
 - **依赖注入**: 接口解耦，易于测试
 - **插件化设计**: 协议解析器可扩展

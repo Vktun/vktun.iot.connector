@@ -12,6 +12,7 @@ public class TcpServerChannel : CommunicationChannelBase
     private readonly IPAddress _localAddress;
     private readonly int _port;
     private readonly int _backlog;
+    private readonly bool _allowAnonymousAcceptedClients;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
 
     private Socket? _listener;
@@ -28,7 +29,8 @@ public class TcpServerChannel : CommunicationChannelBase
         string localIpAddress,
         int port,
         IConfigurationProvider configProvider,
-        ILogger logger) : base(configProvider, logger)
+        ILogger logger,
+        bool allowAnonymousAcceptedClients = false) : base(configProvider, logger)
     {
         _localAddress = string.IsNullOrWhiteSpace(localIpAddress)
             ? IPAddress.Any
@@ -36,6 +38,7 @@ public class TcpServerChannel : CommunicationChannelBase
         _port = port;
         ChannelId = $"TcpServer_{_localAddress}_{port}";
         _backlog = configProvider.GetConfig().Tcp.ListenBacklog;
+        _allowAnonymousAcceptedClients = allowAnonymousAcceptedClients;
     }
 
     public override Task<bool> OpenAsync(CancellationToken cancellationToken = default)
@@ -61,6 +64,10 @@ public class TcpServerChannel : CommunicationChannelBase
             _listener.Listen(_backlog);
 
             _isConnected = true;
+            if (_allowAnonymousAcceptedClients)
+            {
+                EnsureAcceptLoopStarted();
+            }
             _logger.Info($"TCP server is listening on {_localAddress}:{_port}.");
             return Task.FromResult(true);
         }
@@ -254,30 +261,32 @@ public class TcpServerChannel : CommunicationChannelBase
                 var socket = await _listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
                 var remoteEndPoint = socket.RemoteEndPoint as IPEndPoint;
 
-                if (_expectedDevice == null)
+                var expectedDevice = _expectedDevice;
+                if (expectedDevice == null && !_allowAnonymousAcceptedClients)
                 {
                     _logger.Warning($"Rejected unexpected TCP client {remoteEndPoint} because no device is waiting for a connection.");
                     socket.Dispose();
                     continue;
                 }
 
-                if (_connections.ContainsKey(_expectedDevice.DeviceId))
+                var deviceId = expectedDevice?.DeviceId ?? CreateAcceptedDeviceId(remoteEndPoint);
+                if (_connections.ContainsKey(deviceId))
                 {
-                    _logger.Warning($"Rejected TCP client {remoteEndPoint} because device {_expectedDevice.DeviceId} is already connected.");
+                    _logger.Warning($"Rejected TCP client {remoteEndPoint} because device {deviceId} is already connected.");
                     socket.Dispose();
                     continue;
                 }
 
-                if (!IsExpectedRemoteAddress(remoteEndPoint))
+                if (expectedDevice != null && !IsExpectedRemoteAddress(remoteEndPoint))
                 {
-                    _logger.Warning($"Rejected TCP client {remoteEndPoint} because it does not match the expected remote endpoint for {_expectedDevice.DeviceId}.");
+                    _logger.Warning($"Rejected TCP client {remoteEndPoint} because it does not match the expected remote endpoint for {expectedDevice.DeviceId}.");
                     socket.Dispose();
                     continue;
                 }
 
                 var connection = new DeviceConnection
                 {
-                    DeviceId = _expectedDevice.DeviceId,
+                    DeviceId = deviceId,
                     Socket = socket,
                     RemoteEndPoint = remoteEndPoint,
                     ConnectTime = DateTime.Now,
@@ -288,15 +297,13 @@ public class TcpServerChannel : CommunicationChannelBase
 
                 _connections[connection.DeviceId] = connection;
 
-                var connectedDevice = CloneExpectedDevice(_expectedDevice);
-                if (remoteEndPoint != null)
-                {
-                    connectedDevice.IpAddress = remoteEndPoint.Address.ToString();
-                    connectedDevice.Port = remoteEndPoint.Port;
-                }
+                var connectedDevice = CreateConnectedDevice(expectedDevice, connection.DeviceId, remoteEndPoint);
 
-                _expectedDevice = null;
-                _expectedRemoteAddress = null;
+                if (expectedDevice != null)
+                {
+                    _expectedDevice = null;
+                    _expectedRemoteAddress = null;
+                }
 
                 OnDeviceConnected(connection.DeviceId, connectedDevice);
                 _pendingAcceptSource?.TrySetResult(true);
@@ -362,6 +369,43 @@ public class TcpServerChannel : CommunicationChannelBase
         }
 
         return Equals(remoteEndPoint.Address, _expectedRemoteAddress);
+    }
+
+    private string CreateAcceptedDeviceId(IPEndPoint? remoteEndPoint)
+    {
+        var endpointText = remoteEndPoint == null
+            ? Guid.NewGuid().ToString("N")
+            : $"{remoteEndPoint.Address}_{remoteEndPoint.Port}";
+        var baseId = $"TCP_CLIENT_{endpointText}".Replace('.', '_').Replace(':', '_');
+
+        return _connections.ContainsKey(baseId)
+            ? $"{baseId}_{Guid.NewGuid():N}"
+            : baseId;
+    }
+
+    private DeviceInfo CreateConnectedDevice(DeviceInfo? expectedDevice, string deviceId, IPEndPoint? remoteEndPoint)
+    {
+        var connectedDevice = expectedDevice == null
+            ? new DeviceInfo
+            {
+                DeviceId = deviceId,
+                DeviceName = $"TCP Client {remoteEndPoint}",
+                CommunicationType = CommunicationType.Tcp,
+                ConnectionMode = ConnectionMode.Server,
+                LocalIpAddress = _localAddress.Equals(IPAddress.Any) ? string.Empty : _localAddress.ToString(),
+                LocalPort = _port,
+                ProtocolType = global::Vktun.IoT.Connector.Core.Enums.ProtocolType.Custom,
+                ProtocolId = "TcpServerAcceptedClient"
+            }
+            : CloneExpectedDevice(expectedDevice);
+
+        if (remoteEndPoint != null)
+        {
+            connectedDevice.IpAddress = remoteEndPoint.Address.ToString();
+            connectedDevice.Port = remoteEndPoint.Port;
+        }
+
+        return connectedDevice;
     }
 
     private static DeviceInfo CloneExpectedDevice(DeviceInfo device)

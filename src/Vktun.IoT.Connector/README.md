@@ -1,6 +1,6 @@
 # Vktun.IoT.Connector
 
-物联网设备连接 SDK，支持 Modbus RTU/TCP、IEC104、S7、OPC UA 等多种工业协议，提供设备管理、数据采集、云端连接等完整功能。
+物联网设备连接 SDK 的主门面包。当前稳定入口聚焦 `IIoTDataCollector`、DI 注册、Modbus RTU/TCP、HTTP/MQTT 和自定义协议接入；S7/IEC104 为受限可用，实验性协议和云连接器不应直接视为主包的生产承诺。
 
 ## 安装
 
@@ -10,11 +10,11 @@ dotnet add package Vktun.IoT.Connector
 
 ## 功能
 
-- 多协议支持（Modbus、IEC104、S7、OPC UA 等）
-- 设备管理
-- 数据采集
-- 云端连接
-- 完整的 IoT 解决方案
+- `IIoTDataCollector` 主门面
+- `AddVktunIoTConnector` / `AddVktunHttpChannel` / `AddVktunMqttChannel`
+- 设备管理与数据采集
+- Modbus RTU/TCP、HTTP/MQTT、自定义协议的对外接入路径
+- 受限的 S7 / IEC104 运行时能力
 
 ## 快速开始
 
@@ -74,6 +74,13 @@ services.AddVktunMqttChannel(mqtt =>
     mqtt.ClientId = "gateway-001";
 });
 ```
+
+## 当前能力边界
+
+- `OPC UA`、`BACnet`、`CANopen` 在当前代码库里属于实验性能力，请以根 README 和 `Docs/实现状态与桩功能说明.md` 为准。
+- `AzureIoTHubConnector`、`AwsIoTConnector` 存在于运行时层，但不是 `AddVktunIoTConnector` 默认注册的一部分。
+- 如需按需接入云连接器，请显式调用 `AddVktunAzureIoTHubConnector` 或 `AddVktunAwsIoTConnector`。
+- 生产场景请不要启用 `UseInMemoryTransport`，并应补充真实设备联调与证书策略验证。
 
 ## 延伸文档
 

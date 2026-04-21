@@ -8,28 +8,10 @@
     <PackageId>Vktun.IoT.Connector.Business</PackageId>
     <Version>0.0.4</Version>
     <Authors>Vktun</Authors>
-    <Description>Vktun IoT Connector Business - 运行时编排层，提供设备管理、会话管理、通道工厂、命令执行和云连接器等核心运行能力。
+    <Description>Vktun IoT Connector Business - 运行时编排层，包含 DeviceManager、SessionManager、HeartbeatManager、DataProvider、DeviceCommandExecutor 和 RetryPolicy 等能力。
 
-主要功能：
-- 设备管理器（DeviceManager）：设备的注册、连接、断开、状态管理等
-- 会话管理器（SessionManager）：设备会话的创建、维护、清理
-- 心跳管理器（HeartbeatManager）：设备在线状态检测和心跳维护
-- 云连接器（AzureIoTHubConnector/AwsIoTConnector）：Azure IoT Hub 和 AWS IoT Core 连接支持
-- 数据提供者（DataProvider）：数据读写和存储
-- 认证服务（AuthenticationService）：设备认证和授权
-- 命令执行器（DeviceCommandExecutor）：设备命令的执行和响应处理
-- 重试策略（RetryPolicy）：连接和操作的重试机制
-
-使用方式：
-1. 安装 NuGet 包：dotnet add package Vktun.IoT.Connector.Business
-2. 创建设备管理器实例并注入依赖
-3. 使用设备管理器添加和管理设备
-
-示例代码：
-var deviceManager = new DeviceManager(sessionManager, commandExecutor, logger);
-await deviceManager.AddDeviceAsync(new DeviceInfo { DeviceId = "device-001" });
-await deviceManager.ConnectDeviceAsync("device-001");</Description>
-    <PackageTags>IoT;Connector;Runtime;Hosting;Business;DeviceManagement;CloudConnector;AzureIoTHub;AWSIoT;SessionManagement</PackageTags>
+AzureIoTHubConnector 和 AwsIoTConnector 当前作为独立辅助类存在，未作为主门面默认注册的稳定能力对外承诺。</Description>
+    <PackageTags>IoT;Connector;Runtime;Hosting;DeviceManagement;SessionManagement;CommandExecution;DataProvider;RetryPolicy</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>

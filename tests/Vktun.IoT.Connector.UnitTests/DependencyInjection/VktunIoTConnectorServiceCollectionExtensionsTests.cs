@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Vktun.IoT.Connector.Business.Cloud;
 using Vktun.IoT.Connector.Business.Providers;
 using Vktun.IoT.Connector.Communication.Channels;
 using Vktun.IoT.Connector.Communication.Mqtt;
@@ -119,5 +120,45 @@ public class VktunIoTConnectorServiceCollectionExtensionsTests
         Assert.True(mqttConfig.UseInMemoryTransport);
         Assert.NotNull(provider.GetRequiredService<MqttChannel>());
         Assert.NotNull(provider.GetRequiredService<IMqttMessagingClient>());
+    }
+
+    [Fact]
+    public async Task AddVktunAzureIoTHubConnector_ShouldResolveConnectorAndConfig()
+    {
+        var services = new ServiceCollection();
+
+        services.AddVktunAzureIoTHubConnector(azure =>
+        {
+            azure.HostName = "sample-hub.azure-devices.net";
+            azure.DeviceId = "device-001";
+            azure.SharedAccessKey = "test-key";
+        });
+
+        await using var provider = services.BuildServiceProvider();
+
+        var azureConfig = provider.GetRequiredService<AzureIoTHubConfig>();
+        Assert.Equal("sample-hub.azure-devices.net", azureConfig.HostName);
+        Assert.Equal("device-001", azureConfig.DeviceId);
+        Assert.NotNull(provider.GetRequiredService<AzureIoTHubConnector>());
+    }
+
+    [Fact]
+    public async Task AddVktunAwsIoTConnector_ShouldResolveConnectorAndConfig()
+    {
+        var services = new ServiceCollection();
+
+        services.AddVktunAwsIoTConnector(aws =>
+        {
+            aws.Endpoint = "example-ats.iot.test";
+            aws.ThingName = "thing-001";
+            aws.Region = "us-east-1";
+        });
+
+        await using var provider = services.BuildServiceProvider();
+
+        var awsConfig = provider.GetRequiredService<AwsIoTConfig>();
+        Assert.Equal("example-ats.iot.test", awsConfig.Endpoint);
+        Assert.Equal("thing-001", awsConfig.ThingName);
+        Assert.NotNull(provider.GetRequiredService<AwsIoTConnector>());
     }
 }

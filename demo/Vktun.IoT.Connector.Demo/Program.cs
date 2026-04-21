@@ -1,15 +1,8 @@
-using Vktun.IoT.Connector.Business.Managers;
-using Vktun.IoT.Connector.Business.Providers;
-using Vktun.IoT.Connector.Business.Services;
-using Vktun.IoT.Connector.Business.Factories;
+using Microsoft.Extensions.DependencyInjection;
 using Vktun.IoT.Connector.Configuration.Logging;
-using Vktun.IoT.Connector.Configuration.Providers;
-using Vktun.IoT.Connector.Concurrency.Monitors;
-using Vktun.IoT.Connector.Concurrency.Schedulers;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
-using Vktun.IoT.Connector.Protocol.Factories;
 
 namespace Vktun.IoT.Connector.Demo;
 
@@ -19,7 +12,15 @@ internal static class Program
 
     private static async Task Main()
     {
-        var collector = BuildCollector();
+        var services = new ServiceCollection();
+        services.AddVktunIoTConnector(options =>
+        {
+            options.MinimumLogLevel = LogLevel.Info;
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var collector = provider.GetRequiredService<IIoTDataCollector>();
+
         collector.DeviceStatusChanged += (_, args) =>
             Logger.Info($"Device {args.DeviceId} status changed: {args.OldStatus} -> {args.NewStatus}");
         collector.DeviceError += (_, args) =>
@@ -56,29 +57,5 @@ internal static class Program
 
         await collector.StopAsync().ConfigureAwait(false);
         await collector.DisposeAsync().ConfigureAwait(false);
-    }
-
-    private static IIoTDataCollector BuildCollector()
-    {
-        var configProvider = new JsonConfigurationProvider(Logger);
-        var sessionManager = new SessionManager(Logger);
-        var parserFactory = new ProtocolParserFactory(Logger);
-        var channelFactory = new CommunicationChannelFactory(configProvider, Logger);
-        var resourceMonitor = new ResourceMonitor(configProvider, Logger);
-        var commandExecutor = new DeviceCommandExecutor(channelFactory, parserFactory, configProvider, Logger, resourceMonitor);
-        var deviceManager = new DeviceManager(sessionManager, commandExecutor, Logger, resourceMonitor: resourceMonitor);
-        var taskScheduler = new Vktun.IoT.Connector.Concurrency.Schedulers.TaskScheduler(configProvider, deviceManager, commandExecutor, Logger);
-        var heartbeatManager = new HeartbeatManager(configProvider, Logger);
-        var dataProvider = new DataProvider(new DataCache(10_000), Logger);
-
-        return new IoTDataCollector(
-            deviceManager,
-            sessionManager,
-            taskScheduler,
-            resourceMonitor,
-            configProvider,
-            dataProvider,
-            heartbeatManager,
-            Logger);
     }
 }

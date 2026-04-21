@@ -78,24 +78,8 @@ public class ProtocolParserFactory : IProtocolParserFactory
 
     public void RegisterParser(IProtocolParser parser)
     {
-        _parsers[parser.Type] = parser;
-        _protocolParsers[parser.Type.ToString()] = parser;
-        _protocolParsers[parser.Name] = parser;
-
-        var descriptor = new ParserDescriptor
-        {
-            ProtocolId = parser.Type.ToString(),
-            ProtocolType = parser.Type,
-            Name = parser.Name,
-            Version = parser.Version,
-            Description = parser.Description,
-            Vendor = parser.Vendor,
-            SupportedDeviceModels = parser.SupportedDeviceModels,
-            Author = parser.Author,
-            Status = parser.Status
-        };
-        _descriptors[parser.Type.ToString()] = descriptor;
-        _descriptors[parser.Name] = descriptor;
+        RegisterTypeAlias(parser);
+        RegisterNamedAlias(parser.Name, parser);
 
         _logger.Info($"Registered protocol parser {parser.Name}, type: {parser.Type}, version: {parser.Version}");
     }
@@ -140,7 +124,7 @@ public class ProtocolParserFactory : IProtocolParserFactory
 
     public IEnumerable<ParserDescriptor> GetAllParserDescriptors()
     {
-        return _descriptors.Values.DistinctBy(d => d.ProtocolId);
+        return _descriptors.Values.DistinctBy(d => $"{d.ProtocolType}|{d.Name}|{d.Version}");
     }
 
     public void LoadPluginParsers(string pluginDirectory)
@@ -196,6 +180,67 @@ public class ProtocolParserFactory : IProtocolParserFactory
         }
 
         return null;
+    }
+
+    private void RegisterTypeAlias(IProtocolParser parser)
+    {
+        var protocolKey = parser.Type.ToString();
+
+        if (_parsers.TryGetValue(parser.Type, out var existing))
+        {
+            if (!ShouldReplaceDefaultParser(existing, parser))
+            {
+                _logger.Info($"Preserving default parser {existing.Name} for type {parser.Type}; {parser.Name} remains addressable by explicit alias.");
+                return;
+            }
+
+            _logger.Warning($"Replacing default parser {existing.Name} with {parser.Name} for type {parser.Type}.");
+        }
+
+        _parsers[parser.Type] = parser;
+        _protocolParsers[protocolKey] = parser;
+        _descriptors[protocolKey] = CreateDescriptor(protocolKey, parser);
+    }
+
+    private void RegisterNamedAlias(string alias, IProtocolParser parser)
+    {
+        _protocolParsers[alias] = parser;
+        _descriptors[alias] = CreateDescriptor(alias, parser);
+    }
+
+    private static ParserDescriptor CreateDescriptor(string protocolId, IProtocolParser parser)
+    {
+        return new ParserDescriptor
+        {
+            ProtocolId = protocolId,
+            ProtocolType = parser.Type,
+            Name = parser.Name,
+            Version = parser.Version,
+            Description = parser.Description,
+            Vendor = parser.Vendor,
+            SupportedDeviceModels = parser.SupportedDeviceModels,
+            Author = parser.Author,
+            Status = parser.Status
+        };
+    }
+
+    private static bool ShouldReplaceDefaultParser(IProtocolParser existing, IProtocolParser candidate)
+    {
+        var existingPriority = GetStatusPriority(existing.Status);
+        var candidatePriority = GetStatusPriority(candidate.Status);
+
+        return candidatePriority > existingPriority;
+    }
+
+    private static int GetStatusPriority(ParserStatus status)
+    {
+        return status switch
+        {
+            ParserStatus.Stable => 3,
+            ParserStatus.Experimental => 2,
+            ParserStatus.Deprecated => 1,
+            _ => 0
+        };
     }
 
     private static bool IsVersionCompatible(string parserVersion, string requestedVersion)
