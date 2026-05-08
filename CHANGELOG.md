@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.0.5 - 2026-05-08
+
+### Fixed
+
+- Removed hardcoded retry limit of 100 in `DeviceManager.ScheduleReconnect`, now uses `IReconnectPolicy.MaxAttempts` instead, respecting the configured policy (fixes policy design violation).
+- Removed unnecessary `async` keyword from `DisconnectDeviceAsync` in `TcpServerChannel` and `SecureTcpChannel`, consistent with other channel implementations.
+- Added `MaxAttempts` property to `IReconnectPolicy` interface and implemented it in `ExponentialBackoffReconnectPolicy` and `RetryPolicy`.
+
+### Changed
+
+- `DeviceManager` now accepts `IReconnectPolicy` directly via constructor injection, replacing raw reconnect parameters, enabling per-device reconnect policy configuration via `SetReconnectPolicy`.
+
 ## 0.0.4 - 2026-04-15
 
 ### Added

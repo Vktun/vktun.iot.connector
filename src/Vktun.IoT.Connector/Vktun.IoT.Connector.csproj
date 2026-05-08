@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector</PackageId>
-    <Version>0.0.4</Version>
+    <Version>0.0.5</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector - 主门面包，提供 IIoTDataCollector、DI 注册和运行时依赖整合。
 
