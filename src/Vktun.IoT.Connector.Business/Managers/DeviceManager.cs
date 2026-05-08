@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
+using Vktun.IoT.Connector.Business.Services;
 
 namespace Vktun.IoT.Connector.Business.Managers;
 
@@ -11,13 +12,12 @@ public class DeviceManager : IDeviceManager
     private readonly ConcurrentDictionary<string, DeviceStatus> _deviceStatuses = new();
     private readonly ConcurrentDictionary<string, DeviceStateMachine> _stateMachines = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _reconnectCts = new();
+    private readonly ConcurrentDictionary<string, IReconnectPolicy> _deviceReconnectPolicies = new();
     private readonly ISessionManager _sessionManager;
     private readonly IDeviceCommandExecutor _commandExecutor;
     private readonly ILogger _logger;
     private readonly IResourceMonitor? _resourceMonitor;
-    private readonly int _maxReconnectCount;
-    private readonly int _reconnectBaseIntervalMs;
-    private readonly int _reconnectMaxIntervalMs;
+    private readonly IReconnectPolicy _defaultReconnectPolicy;
 
     public event EventHandler<DeviceStatusChangedEventArgs>? DeviceStatusChanged;
 
@@ -29,14 +29,24 @@ public class DeviceManager : IDeviceManager
         int reconnectBaseIntervalMs = 1000,
         int reconnectMaxIntervalMs = 30000,
         IResourceMonitor? resourceMonitor = null)
+        : this(sessionManager, commandExecutor, logger,
+            ExponentialBackoffReconnectPolicy.FromGlobalConfig(maxReconnectCount, reconnectBaseIntervalMs, reconnectMaxIntervalMs),
+            resourceMonitor)
+    {
+    }
+
+    public DeviceManager(
+        ISessionManager sessionManager,
+        IDeviceCommandExecutor commandExecutor,
+        ILogger logger,
+        IReconnectPolicy reconnectPolicy,
+        IResourceMonitor? resourceMonitor = null)
     {
         _sessionManager = sessionManager;
         _commandExecutor = commandExecutor;
         _logger = logger;
         _resourceMonitor = resourceMonitor;
-        _maxReconnectCount = maxReconnectCount;
-        _reconnectBaseIntervalMs = reconnectBaseIntervalMs;
-        _reconnectMaxIntervalMs = reconnectMaxIntervalMs;
+        _defaultReconnectPolicy = reconnectPolicy ?? ExponentialBackoffReconnectPolicy.CreateDefault();
     }
 
     public Task<bool> AddDeviceAsync(DeviceInfo device)
@@ -73,6 +83,7 @@ public class DeviceManager : IDeviceManager
                 stateMachine.StatusChanged -= OnStateMachineStatusChanged;
             }
 
+            _deviceReconnectPolicies.TryRemove(deviceId, out _);
             await _sessionManager.RemoveSessionAsync(deviceId).ConfigureAwait(false);
             _logger.Info($"Device removed: {deviceId}");
         }
@@ -225,6 +236,18 @@ public class DeviceManager : IDeviceManager
         return stateMachine;
     }
 
+    public void SetReconnectPolicy(string deviceId, IReconnectPolicy policy)
+    {
+        _deviceReconnectPolicies[deviceId] = policy ?? throw new ArgumentNullException(nameof(policy));
+    }
+
+    public IReconnectPolicy GetReconnectPolicy(string deviceId)
+    {
+        return _deviceReconnectPolicies.TryGetValue(deviceId, out var policy)
+            ? policy
+            : _defaultReconnectPolicy;
+    }
+
     private void OnStateMachineStatusChanged(object? sender, DeviceStatusChangedEventArgs e)
     {
         _deviceStatuses[e.DeviceId] = e.NewStatus;
@@ -250,14 +273,15 @@ public class DeviceManager : IDeviceManager
             return;
         }
 
-        var config = new ReconnectContext
+        var policy = GetReconnectPolicy(deviceId);
+        var firstDelay = policy.GetNextDelay(1, null);
+        if (firstDelay == null)
         {
-            DeviceId = deviceId,
-            Attempt = 0,
-            MaxAttempts = _maxReconnectCount
-        };
+            _logger.Warning($"Device {deviceId} reconnect policy does not allow reconnection.");
+            return;
+        }
 
-        if (!stateMachine.CanRetry(config.MaxAttempts, TimeSpan.FromMinutes(10)))
+        if (!stateMachine.CanRetry(policy.MaxAttempts ?? 100, TimeSpan.FromMinutes(10)))
         {
             _logger.Warning($"Device {deviceId} has exceeded maximum reconnect attempts.");
             return;
@@ -265,21 +289,29 @@ public class DeviceManager : IDeviceManager
 
         var cts = new CancellationTokenSource();
         _reconnectCts[deviceId] = cts;
-        _ = ReconnectLoopAsync(deviceId, config, cts.Token);
+        _ = ReconnectLoopAsync(deviceId, policy, cts.Token);
     }
 
-    private async Task ReconnectLoopAsync(string deviceId, ReconnectContext context, CancellationToken cancellationToken)
+    private async Task ReconnectLoopAsync(string deviceId, IReconnectPolicy policy, CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested && context.Attempt < context.MaxAttempts)
-        {
-            context.Attempt++;
-            var delay = CalculateReconnectDelay(context.Attempt);
+        var attempt = 0;
+        Exception? lastException = null;
 
-            _logger.Info($"Reconnect scheduled. deviceId={deviceId} attempt={context.Attempt} maxAttempts={context.MaxAttempts} delayMs={delay}");
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            attempt++;
+            var delay = policy.GetNextDelay(attempt, lastException);
+            if (delay == null)
+            {
+                _logger.Warning($"Device {deviceId} reconnect policy exhausted after {attempt} attempts.");
+                break;
+            }
+
+            _logger.Info($"Reconnect scheduled. deviceId={deviceId} attempt={attempt} delayMs={delay.Value.TotalMilliseconds:F0}");
 
             try
             {
-                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(delay.Value, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -296,7 +328,7 @@ public class DeviceManager : IDeviceManager
                 return;
             }
 
-            if (!stateMachine.TransitionTo(DeviceStatus.Connecting, $"Reconnect attempt {context.Attempt}"))
+            if (!stateMachine.TransitionTo(DeviceStatus.Connecting, $"Reconnect attempt {attempt}"))
             {
                 continue;
             }
@@ -313,15 +345,17 @@ public class DeviceManager : IDeviceManager
                 if (connected)
                 {
                     await _sessionManager.CreateSessionAsync(device).ConfigureAwait(false);
-                    stateMachine.TransitionTo(DeviceStatus.Online, $"Reconnected after {context.Attempt} attempts");
-                    device.ReconnectCount = context.Attempt;
+                    stateMachine.TransitionTo(DeviceStatus.Online, $"Reconnected after {attempt} attempts");
+                    device.ReconnectCount = attempt;
                     _resourceMonitor?.RecordReconnect(deviceId, device.ChannelId, device.ProtocolId, device.ProtocolType, success: true);
-                    _logger.Info($"Device reconnected. deviceId={deviceId} channelId={device.ChannelId} protocolId={device.ProtocolId} attempt={context.Attempt}");
+                    _logger.Info($"Device reconnected. deviceId={deviceId} channelId={device.ChannelId} protocolId={device.ProtocolId} attempt={attempt}");
+                    policy.Reset();
                     return;
                 }
 
-                stateMachine.RecordError(new InvalidOperationException($"Reconnect attempt {context.Attempt} failed"));
-                stateMachine.TransitionTo(DeviceStatus.Error, $"Reconnect attempt {context.Attempt} failed");
+                lastException = new InvalidOperationException($"Reconnect attempt {attempt} failed");
+                stateMachine.RecordError(lastException);
+                stateMachine.TransitionTo(DeviceStatus.Error, $"Reconnect attempt {attempt} failed");
                 _resourceMonitor?.RecordReconnect(deviceId, device.ChannelId, device.ProtocolId, device.ProtocolType, success: false);
             }
             catch (OperationCanceledException)
@@ -330,6 +364,7 @@ public class DeviceManager : IDeviceManager
             }
             catch (Exception ex)
             {
+                lastException = ex;
                 stateMachine.RecordError(ex);
                 stateMachine.TransitionTo(DeviceStatus.Error, $"Reconnect error: {ex.Message}");
                 if (_devices.TryGetValue(deviceId, out var reconnectDevice))
@@ -349,20 +384,5 @@ public class DeviceManager : IDeviceManager
             cts.Cancel();
             cts.Dispose();
         }
-    }
-
-    private int CalculateReconnectDelay(int attempt)
-    {
-        var delay = _reconnectBaseIntervalMs * (1 << Math.Min(attempt - 1, 10));
-        delay = Math.Min(delay, _reconnectMaxIntervalMs);
-        var jitter = delay * 0.25 * (Random.Shared.NextDouble() * 2 - 1);
-        return (int)Math.Max(100, delay + jitter);
-    }
-
-    private sealed class ReconnectContext
-    {
-        public string DeviceId { get; set; } = string.Empty;
-        public int Attempt { get; set; }
-        public int MaxAttempts { get; set; }
     }
 }
