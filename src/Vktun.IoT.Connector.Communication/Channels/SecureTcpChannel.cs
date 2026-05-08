@@ -135,11 +135,11 @@ public class SecureTcpChannel : CommunicationChannelBase
         }
     }
 
-    public override async Task DisconnectDeviceAsync(string deviceId)
+    public override Task DisconnectDeviceAsync(string deviceId)
     {
         if (!_connections.TryRemove(deviceId, out var connection))
         {
-            return;
+            return Task.CompletedTask;
         }
 
         try
@@ -150,7 +150,7 @@ public class SecureTcpChannel : CommunicationChannelBase
             {
                 try
                 {
-                    await receiveLoopTask.ConfigureAwait(false);
+                    receiveLoopTask.GetAwaiter().GetResult();
                 }
                 catch (OperationCanceledException)
                 {
@@ -178,6 +178,8 @@ public class SecureTcpChannel : CommunicationChannelBase
         {
             _logger.Error($"Error disconnecting device {deviceId}: {ex.Message}", ex);
         }
+
+        return Task.CompletedTask;
     }
 
     public override async Task<int> SendAsync(string deviceId, byte[] data, CancellationToken cancellationToken = default)

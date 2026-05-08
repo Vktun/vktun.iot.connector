@@ -224,7 +224,7 @@ public class TcpServerChannel : CommunicationChannelBase
         }
     }
 
-    public override async Task DisconnectDeviceAsync(string deviceId)
+    public override Task DisconnectDeviceAsync(string deviceId)
     {
         if (_connections.TryRemove(deviceId, out var connection))
         {
@@ -247,7 +247,7 @@ public class TcpServerChannel : CommunicationChannelBase
             {
                 try
                 {
-                    await receiveLoopTask.ConfigureAwait(false);
+                    receiveLoopTask.GetAwaiter().GetResult();
                 }
                 catch (OperationCanceledException)
                 {
@@ -268,6 +268,8 @@ public class TcpServerChannel : CommunicationChannelBase
             OnDeviceDisconnected(deviceId, "Disconnected.");
             _logger.Info($"TCP device disconnected: {deviceId}");
         }
+
+        return Task.CompletedTask;
     }
 
     private void EnsureAcceptLoopStarted()
