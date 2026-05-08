@@ -20,7 +20,9 @@ public class SecureTcpChannel : CommunicationChannelBase
     private readonly ConcurrentDictionary<string, SslStream?> _sslStreams;
     private readonly ConcurrentDictionary<string, X509Certificate2> _clientCertificates;
     private Socket? _clientSocket;
-    private readonly object _connectLock = new();
+    private readonly SemaphoreSlim _connectionLock = new(1, 1);
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private readonly ConcurrentDictionary<string, Task> _receiveLoopTasks = new();
 
     public SecureTcpChannel(
         IConfigurationProvider configProvider,
@@ -60,31 +62,29 @@ public class SecureTcpChannel : CommunicationChannelBase
     {
         var deviceId = device.DeviceId;
 
-        lock (_connectLock)
+        await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
             if (_connections.ContainsKey(deviceId))
             {
                 _logger.Debug($"Device {deviceId} is already connected");
                 return true;
             }
-        }
 
-        try
-        {
             var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
             socket.NoDelay = true;
             socket.ReceiveBufferSize = 8192;
             socket.SendBufferSize = 8192;
 
             var endPoint = new IPEndPoint(IPAddress.Parse(device.IpAddress), device.Port);
-            await socket.ConnectAsync(endPoint, cancellationToken);
+            await socket.ConnectAsync(endPoint, cancellationToken).ConfigureAwait(false);
 
             var networkStream = new NetworkStream(socket, true);
             Stream stream = networkStream;
 
             if (_tlsConfig != null && _tlsConfig.Enabled)
             {
-                stream = await PerformTlsHandshakeAsync(networkStream, device.IpAddress, cancellationToken);
+                stream = await PerformTlsHandshakeAsync(networkStream, device.IpAddress, cancellationToken).ConfigureAwait(false);
                 if (stream == null)
                 {
                     _logger.Error($"TLS handshake failed for device {deviceId}");
@@ -94,19 +94,8 @@ public class SecureTcpChannel : CommunicationChannelBase
                 }
             }
 
-            lock (_connectLock)
-            {
-                if (_connections.ContainsKey(deviceId))
-                {
-                    _logger.Debug($"Device {deviceId} is already connected");
-                    stream.Dispose();
-                    socket.Dispose();
-                    return true;
-                }
-
-                _clientSocket?.Dispose();
-                _clientSocket = socket;
-            }
+            _clientSocket?.Dispose();
+            _clientSocket = socket;
 
             var connection = new DeviceConnection
             {
@@ -129,6 +118,8 @@ public class SecureTcpChannel : CommunicationChannelBase
             _isConnected = true;
             OnDeviceConnected(deviceId, device);
 
+            _receiveLoopTasks[deviceId] = ReceiveLoopAsync(deviceId, connection.CancellationTokenSource.Token);
+
             _logger.Info($"Device {deviceId} connected successfully{(stream is SslStream ? " with TLS" : "")}");
             return true;
         }
@@ -137,6 +128,10 @@ public class SecureTcpChannel : CommunicationChannelBase
             _logger.Error($"Error connecting to device {deviceId}: {ex.Message}", ex);
             OnErrorOccurred(deviceId, "Connection failed", ex);
             return false;
+        }
+        finally
+        {
+            _connectionLock.Release();
         }
     }
 
@@ -149,13 +144,30 @@ public class SecureTcpChannel : CommunicationChannelBase
 
         try
         {
+            connection.CancellationTokenSource?.Cancel();
+
+            if (_receiveLoopTasks.TryRemove(deviceId, out var receiveLoopTask))
+            {
+                try
+                {
+                    await receiveLoopTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    _logger.Debug($"Receive loop for device {deviceId} ended with: {ex.Message}");
+                }
+            }
+
             if (_sslStreams.TryRemove(deviceId, out var sslStream))
             {
                 sslStream?.Close();
                 sslStream?.Dispose();
             }
 
-            connection.CancellationTokenSource?.Cancel();
+            connection.CancellationTokenSource?.Dispose();
             connection.Socket?.Shutdown(SocketShutdown.Both);
             connection.Socket?.Dispose();
 
@@ -176,19 +188,20 @@ public class SecureTcpChannel : CommunicationChannelBase
             return 0;
         }
 
+        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_sslStreams.TryGetValue(deviceId, out var sslStream) && sslStream != null)
             {
-                await sslStream.WriteAsync(data, 0, data.Length, cancellationToken);
-                await sslStream.FlushAsync(cancellationToken);
+                await sslStream.WriteAsync(data, 0, data.Length, cancellationToken).ConfigureAwait(false);
+                await sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
             else if (connection.Socket != null)
             {
-                await connection.Socket.SendAsync(data, SocketFlags.None, cancellationToken);
+                await connection.Socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
             }
 
-            connection.BytesSent += data.Length;
+            connection.AddBytesSent(data.Length);
             connection.LastActiveTime = DateTime.UtcNow;
 
             _logger.Debug($"Sent {data.Length} bytes to device {deviceId}");
@@ -199,6 +212,10 @@ public class SecureTcpChannel : CommunicationChannelBase
             _logger.Error($"Error sending data to device {deviceId}: {ex.Message}", ex);
             OnErrorOccurred(deviceId, "Send failed", ex);
             return 0;
+        }
+        finally
+        {
+            _sendLock.Release();
         }
     }
 
@@ -210,19 +227,20 @@ public class SecureTcpChannel : CommunicationChannelBase
             return 0;
         }
 
+        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_sslStreams.TryGetValue(deviceId, out var sslStream) && sslStream != null)
             {
-                await sslStream.WriteAsync(data, cancellationToken);
-                await sslStream.FlushAsync(cancellationToken);
+                await sslStream.WriteAsync(data, cancellationToken).ConfigureAwait(false);
+                await sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
             else if (connection.Socket != null)
             {
-                await connection.Socket.SendAsync(data, SocketFlags.None, cancellationToken);
+                await connection.Socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
             }
 
-            connection.BytesSent += data.Length;
+            connection.AddBytesSent(data.Length);
             connection.LastActiveTime = DateTime.UtcNow;
 
             _logger.Debug($"Sent {data.Length} bytes to device {deviceId}");
@@ -234,86 +252,70 @@ public class SecureTcpChannel : CommunicationChannelBase
             OnErrorOccurred(deviceId, "Send failed", ex);
             return 0;
         }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 
     public override async IAsyncEnumerable<ReceivedData> ReceiveAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        while (!cancellationToken.IsCancellationRequested && _isConnected)
-        {
-            List<ReceivedData> receivedDataList = new();
-
-            foreach (var kvp in _connections)
-            {
-                var deviceId = kvp.Key;
-                var connection = kvp.Value;
-
-                if (connection.Socket == null || !connection.Socket.Connected)
-                    continue;
-
-                var receivedData = await TryReceiveAsync(deviceId, connection, cancellationToken);
-                if (receivedData != null)
-                {
-                    receivedDataList.Add(receivedData);
-                }
-            }
-
-            foreach (var data in receivedDataList)
-            {
-                yield return data;
-            }
-
-            await Task.Delay(10, cancellationToken);
-        }
+        await Task.CompletedTask.ConfigureAwait(false);
+        throw new NotSupportedException("SecureTcpChannel uses event-based data reception (DataReceived event). Use OnDataReceived instead of ReceiveAsync.");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
     }
 
-    private async Task<ReceivedData?> TryReceiveAsync(string deviceId, DeviceConnection connection, CancellationToken cancellationToken)
+    private async Task ReceiveLoopAsync(string deviceId, CancellationToken cancellationToken)
     {
-        try
+        var buffer = new byte[8192];
+
+        while (!cancellationToken.IsCancellationRequested && _isConnected)
         {
-            if (_sslStreams.TryGetValue(deviceId, out var sslStream) && sslStream != null && sslStream.CanRead)
+            try
             {
-                var buffer = new byte[8192];
-                var bytesRead = await sslStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
+                int bytesRead;
 
-                if (bytesRead > 0)
+                if (_sslStreams.TryGetValue(deviceId, out var sslStream) && sslStream != null && sslStream.CanRead)
                 {
-                    connection.BytesReceived += bytesRead;
-                    connection.LastActiveTime = DateTime.UtcNow;
-
-                    return new ReceivedData
-                    {
-                        DeviceId = deviceId,
-                        Data = buffer.AsMemory(0, bytesRead).ToArray(),
-                        Timestamp = DateTime.UtcNow
-                    };
+                    bytesRead = await sslStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
                 }
+                else if (_connections.TryGetValue(deviceId, out var connection) && connection.Socket != null)
+                {
+                    bytesRead = await connection.Socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    break;
+                }
+
+                if (bytesRead == 0)
+                {
+                    _logger.Debug($"Secure TCP remote endpoint closed the connection for device {deviceId}.");
+                    break;
+                }
+
+                if (_connections.TryGetValue(deviceId, out var conn))
+                {
+                    conn.AddBytesReceived(bytesRead);
+                    conn.LastActiveTime = DateTime.UtcNow;
+                }
+
+                var data = new byte[bytesRead];
+                Buffer.BlockCopy(buffer, 0, data, 0, bytesRead);
+                OnDataReceived(deviceId, data);
             }
-            else if (connection.Socket != null && connection.Socket.Available > 0)
+            catch (OperationCanceledException)
             {
-                var buffer = new byte[8192];
-                var bytesRead = await connection.Socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken);
-
-                if (bytesRead > 0)
-                {
-                    connection.BytesReceived += bytesRead;
-                    connection.LastActiveTime = DateTime.UtcNow;
-
-                    return new ReceivedData
-                    {
-                        DeviceId = deviceId,
-                        Data = buffer.AsMemory(0, bytesRead).ToArray(),
-                        Timestamp = DateTime.UtcNow
-                    };
-                }
+                break;
+            }
+            catch (Exception ex)
+            {
+                OnErrorOccurred(deviceId, "Failed to receive secure TCP data.", ex);
+                break;
             }
         }
-        catch (Exception ex)
-        {
-            _logger.Error($"Error receiving data from device {deviceId}: {ex.Message}", ex);
-            OnErrorOccurred(deviceId, "Receive failed", ex);
-        }
-
-        return null;
     }
 
     private async Task<SslStream?> PerformTlsHandshakeAsync(
@@ -404,6 +406,9 @@ public class SecureTcpChannel : CommunicationChannelBase
             cert.Dispose();
         }
         _clientCertificates.Clear();
+
+        _connectionLock.Dispose();
+        _sendLock.Dispose();
 
         await base.DisposeAsync();
     }

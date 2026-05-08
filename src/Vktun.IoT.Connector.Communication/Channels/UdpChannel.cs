@@ -153,7 +153,7 @@ public class UdpChannel : CommunicationChannelBase
         try
         {
             var bytesSent = await _socket.SendToAsync(data, SocketFlags.None, connection.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
-            connection.BytesSent += bytesSent;
+            connection.AddBytesSent(bytesSent);
             connection.LastActiveTime = DateTime.Now;
             OnDataSent(deviceId, data.ToArray(), bytesSent);
             return bytesSent;
@@ -310,7 +310,7 @@ public class UdpChannel : CommunicationChannelBase
                     continue;
                 }
 
-                connection.BytesReceived += receiveResult.ReceivedBytes;
+                connection.AddBytesReceived(receiveResult.ReceivedBytes);
                 connection.LastActiveTime = DateTime.Now;
 
                 if (_sessions.TryGetValue(deviceId, out var session))

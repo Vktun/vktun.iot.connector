@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using Vktun.IoT.Connector.Core.Enums;
@@ -14,6 +15,8 @@ public class TcpServerChannel : CommunicationChannelBase
     private readonly int _backlog;
     private readonly bool _allowAnonymousAcceptedClients;
     private readonly SemaphoreSlim _connectLock = new(1, 1);
+    private readonly ConcurrentDictionary<string, Task> _receiveLoopTasks = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _perDeviceSendLocks = new();
 
     private Socket? _listener;
     private CancellationTokenSource? _lifetimeCts;
@@ -138,10 +141,12 @@ public class TcpServerChannel : CommunicationChannelBase
             return 0;
         }
 
+        var sendLock = _perDeviceSendLocks.GetOrAdd(deviceId, _ => new SemaphoreSlim(1, 1));
+        await sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var bytesSent = await connection.Socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
-            connection.BytesSent += bytesSent;
+            connection.AddBytesSent(bytesSent);
             connection.LastActiveTime = DateTime.Now;
             OnDataSent(deviceId, data.ToArray(), bytesSent);
             return bytesSent;
@@ -150,6 +155,10 @@ public class TcpServerChannel : CommunicationChannelBase
         {
             OnErrorOccurred(deviceId, "Failed to send TCP data.", ex);
             return 0;
+        }
+        finally
+        {
+            sendLock.Release();
         }
     }
 
@@ -215,7 +224,7 @@ public class TcpServerChannel : CommunicationChannelBase
         }
     }
 
-    public override Task DisconnectDeviceAsync(string deviceId)
+    public override async Task DisconnectDeviceAsync(string deviceId)
     {
         if (_connections.TryRemove(deviceId, out var connection))
         {
@@ -233,13 +242,32 @@ public class TcpServerChannel : CommunicationChannelBase
             }
 
             connection.CancellationTokenSource?.Cancel();
+
+            if (_receiveLoopTasks.TryRemove(deviceId, out var receiveLoopTask))
+            {
+                try
+                {
+                    await receiveLoopTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    _logger.Debug($"Receive loop for device {deviceId} ended with: {ex.Message}");
+                }
+            }
+
             connection.CancellationTokenSource?.Dispose();
+
+            if (_perDeviceSendLocks.TryRemove(deviceId, out var sendLock))
+            {
+                sendLock.Dispose();
+            }
 
             OnDeviceDisconnected(deviceId, "Disconnected.");
             _logger.Info($"TCP device disconnected: {deviceId}");
         }
-
-        return Task.CompletedTask;
     }
 
     private void EnsureAcceptLoopStarted()
@@ -260,6 +288,14 @@ public class TcpServerChannel : CommunicationChannelBase
             {
                 var socket = await _listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
                 var remoteEndPoint = socket.RemoteEndPoint as IPEndPoint;
+
+                var maxConnections = _configProvider.GetConfig().Tcp.MaxServerConnections;
+                if (_connections.Count >= maxConnections)
+                {
+                    _logger.Warning($"Rejected TCP client {remoteEndPoint} because maximum connections ({maxConnections}) reached.");
+                    socket.Dispose();
+                    continue;
+                }
 
                 var expectedDevice = _expectedDevice;
                 if (expectedDevice == null && !_allowAnonymousAcceptedClients)
@@ -307,7 +343,7 @@ public class TcpServerChannel : CommunicationChannelBase
 
                 OnDeviceConnected(connection.DeviceId, connectedDevice);
                 _pendingAcceptSource?.TrySetResult(true);
-                _ = ReceiveLoopAsync(connection, connection.CancellationTokenSource.Token);
+                _receiveLoopTasks[connection.DeviceId] = ReceiveLoopAsync(connection, connection.CancellationTokenSource.Token);
                 _logger.Info($"Accepted TCP client for device {connection.DeviceId}: {remoteEndPoint}");
             }
             catch (OperationCanceledException)
@@ -341,7 +377,7 @@ public class TcpServerChannel : CommunicationChannelBase
                     break;
                 }
 
-                connection.BytesReceived += bytesRead;
+                connection.AddBytesReceived(bytesRead);
                 connection.LastActiveTime = DateTime.Now;
 
                 var data = new byte[bytesRead];

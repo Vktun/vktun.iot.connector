@@ -247,6 +247,11 @@ public class IoTDataCollector : IIoTDataCollector
             ErrorMessage = $"Heartbeat missed {e.MissedCount} times.",
             Timestamp = DateTime.Now
         });
+
+        if (e.MissedCount >= 3)
+        {
+            _deviceManager.HandleDeviceDisconnected(e.DeviceId, $"Heartbeat timeout (missed {e.MissedCount} times)");
+        }
     }
 
     private void OnTaskFailed(object? sender, TaskFailedEventArgs e)

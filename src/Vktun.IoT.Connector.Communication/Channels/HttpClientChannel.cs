@@ -80,7 +80,7 @@ public class HttpClientChannel : CommunicationChannelBase
         {
             using var request = CreateRequest(endpoint, data);
             OnDataSent(deviceId, data.ToArray(), data.Length);
-            connection.BytesSent += data.Length;
+            connection.AddBytesSent(data.Length);
             connection.LastActiveTime = DateTime.Now;
 
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
@@ -92,7 +92,7 @@ public class HttpClientChannel : CommunicationChannelBase
                 return 0;
             }
 
-            connection.BytesReceived += responseData.Length;
+            connection.AddBytesReceived(responseData.Length);
             connection.LastActiveTime = DateTime.Now;
             OnDataReceived(deviceId, responseData);
             return data.Length;

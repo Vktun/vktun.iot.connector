@@ -1,3 +1,4 @@
+using Vktun.IoT.Connector.Business.Services;
 using Vktun.IoT.Connector.Communication.Channels;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
@@ -31,16 +32,51 @@ public class CommunicationChannelFactory : ICommunicationChannelFactory
 
         ConnectionSettingsValidator.ApplyNormalizedSettings(device, validation.Settings);
 
-        return (device.CommunicationType, device.ConnectionMode) switch
+        ICommunicationChannel channel = (device.CommunicationType, device.ConnectionMode) switch
         {
             (CommunicationType.Tcp, ConnectionMode.Client) => new TcpClientChannel(_configProvider, _logger),
             (CommunicationType.Tcp, ConnectionMode.Server) => new TcpServerChannel(device.LocalIpAddress, device.LocalPort, _configProvider, _logger),
             (CommunicationType.Udp, _) => new UdpChannel(device.ConnectionMode, device.LocalIpAddress, device.LocalPort, _configProvider, _logger),
             (CommunicationType.Http, ConnectionMode.Client) => new HttpClientChannel(_configProvider, _logger, _httpClientFactory),
-            (CommunicationType.Mqtt, ConnectionMode.Client) => new MqttChannel(_configProvider, _logger, CreateMqttConfig(device)),
+            (CommunicationType.Mqtt, ConnectionMode.Client) => CreateMqttChannel(device),
             (CommunicationType.Serial, _) => new SerialChannel(device.SerialPort, device.BaudRate, _configProvider, _logger),
             _ => throw new NotSupportedException($"Unsupported channel type: {device.CommunicationType}/{device.ConnectionMode}")
         };
+
+        return channel;
+    }
+
+    public static IReconnectPolicy? CreateReconnectPolicy(DeviceInfo device)
+    {
+        var maxAttempts = GetInt(device, "ReconnectMaxAttempts");
+        var baseIntervalMs = GetInt(device, "ReconnectBaseIntervalMs");
+        var maxIntervalMs = GetInt(device, "ReconnectMaxIntervalMs");
+
+        if (maxAttempts == null && baseIntervalMs == null && maxIntervalMs == null)
+        {
+            return null;
+        }
+
+        return new ExponentialBackoffReconnectPolicy(new ReconnectPolicyConfig
+        {
+            MaxAttempts = maxAttempts ?? 100,
+            BaseIntervalMs = baseIntervalMs ?? 1000,
+            MaxIntervalMs = maxIntervalMs ?? 30000
+        });
+    }
+
+    private MqttChannel CreateMqttChannel(DeviceInfo device)
+    {
+        var mqttConfig = CreateMqttConfig(device);
+        var channel = new MqttChannel(_configProvider, _logger, mqttConfig);
+
+        var reconnectPolicy = CreateReconnectPolicy(device);
+        if (reconnectPolicy != null)
+        {
+            channel.ReconnectPolicy = reconnectPolicy;
+        }
+
+        return channel;
     }
 
     private static MqttConfig CreateMqttConfig(DeviceInfo device)

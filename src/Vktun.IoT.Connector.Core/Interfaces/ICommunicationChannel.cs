@@ -74,13 +74,49 @@ namespace Vktun.IoT.Connector.Core.Interfaces
 
     public class ChannelStatistics
     {
-        public long TotalBytesSent { get; set; }
-        public long TotalBytesReceived { get; set; }
-        public long TotalPacketsSent { get; set; }
-        public long TotalPacketsReceived { get; set; }
-        public long TotalErrors { get; set; }
-        public long TotalConnections { get; set; }
-        public long TotalDisconnections { get; set; }
+        private long _totalBytesSent;
+        private long _totalBytesReceived;
+        private long _totalPacketsSent;
+        private long _totalPacketsReceived;
+        private long _totalErrors;
+        private long _totalConnections;
+        private long _totalDisconnections;
+
+        public long TotalBytesSent
+        {
+            get => Interlocked.Read(ref _totalBytesSent);
+            set => Interlocked.Exchange(ref _totalBytesSent, value);
+        }
+        public long TotalBytesReceived
+        {
+            get => Interlocked.Read(ref _totalBytesReceived);
+            set => Interlocked.Exchange(ref _totalBytesReceived, value);
+        }
+        public long TotalPacketsSent
+        {
+            get => Interlocked.Read(ref _totalPacketsSent);
+            set => Interlocked.Exchange(ref _totalPacketsSent, value);
+        }
+        public long TotalPacketsReceived
+        {
+            get => Interlocked.Read(ref _totalPacketsReceived);
+            set => Interlocked.Exchange(ref _totalPacketsReceived, value);
+        }
+        public long TotalErrors
+        {
+            get => Interlocked.Read(ref _totalErrors);
+            set => Interlocked.Exchange(ref _totalErrors, value);
+        }
+        public long TotalConnections
+        {
+            get => Interlocked.Read(ref _totalConnections);
+            set => Interlocked.Exchange(ref _totalConnections, value);
+        }
+        public long TotalDisconnections
+        {
+            get => Interlocked.Read(ref _totalDisconnections);
+            set => Interlocked.Exchange(ref _totalDisconnections, value);
+        }
         public DateTime? LastSendTime { get; set; }
         public DateTime? LastReceiveTime { get; set; }
         public DateTime? LastErrorTime { get; set; }
@@ -89,6 +125,14 @@ namespace Vktun.IoT.Connector.Core.Interfaces
         public TimeSpan Uptime => DateTime.Now - StartTime;
         public double AveragePacketSizeSent => TotalPacketsSent > 0 ? (double)TotalBytesSent / TotalPacketsSent : 0;
         public double AveragePacketSizeReceived => TotalPacketsReceived > 0 ? (double)TotalBytesReceived / TotalPacketsReceived : 0;
+
+        public void IncrementTotalBytesSent(long value) => Interlocked.Add(ref _totalBytesSent, value);
+        public void IncrementTotalBytesReceived(long value) => Interlocked.Add(ref _totalBytesReceived, value);
+        public void IncrementTotalPacketsSent() => Interlocked.Increment(ref _totalPacketsSent);
+        public void IncrementTotalPacketsReceived() => Interlocked.Increment(ref _totalPacketsReceived);
+        public void IncrementTotalErrors() => Interlocked.Increment(ref _totalErrors);
+        public void IncrementTotalConnections() => Interlocked.Increment(ref _totalConnections);
+        public void IncrementTotalDisconnections() => Interlocked.Increment(ref _totalDisconnections);
 
         public ChannelStatistics Snapshot()
         {

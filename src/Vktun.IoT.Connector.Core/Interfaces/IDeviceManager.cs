@@ -15,6 +15,9 @@ namespace Vktun.IoT.Connector.Core.Interfaces
         Task<bool> DisconnectDeviceAsync(string deviceId);
         Task<int> ConnectAllAsync();
         Task<int> DisconnectAllAsync();
+        void HandleDeviceDisconnected(string deviceId, string reason);
+        void SetReconnectPolicy(string deviceId, IReconnectPolicy policy);
+        IReconnectPolicy GetReconnectPolicy(string deviceId);
         event EventHandler<DeviceStatusChangedEventArgs>? DeviceStatusChanged;
     }
 

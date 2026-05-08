@@ -63,7 +63,7 @@ public abstract class CommunicationChannelBase : ICommunicationChannel
 
     protected virtual void OnErrorOccurred(string deviceId, string message, Exception? exception = null)
     {
-        _statistics.TotalErrors++;
+        _statistics.IncrementTotalErrors();
         _statistics.LastErrorTime = DateTime.Now;
         ErrorOccurred?.Invoke(this, new ChannelErrorEventArgs
         {
@@ -75,7 +75,7 @@ public abstract class CommunicationChannelBase : ICommunicationChannel
 
     protected virtual void OnDeviceConnected(string deviceId, DeviceInfo device)
     {
-        _statistics.TotalConnections++;
+        _statistics.IncrementTotalConnections();
         DeviceConnected?.Invoke(this, new DeviceConnectedEventArgs
         {
             DeviceId = deviceId,
@@ -86,7 +86,7 @@ public abstract class CommunicationChannelBase : ICommunicationChannel
 
     protected virtual void OnDeviceDisconnected(string deviceId, string reason)
     {
-        _statistics.TotalDisconnections++;
+        _statistics.IncrementTotalDisconnections();
         DeviceDisconnected?.Invoke(this, new DeviceDisconnectedEventArgs
         {
             DeviceId = deviceId,
@@ -97,8 +97,8 @@ public abstract class CommunicationChannelBase : ICommunicationChannel
 
     protected virtual void OnDataReceived(string deviceId, byte[] data)
     {
-        _statistics.TotalBytesReceived += data.Length;
-        _statistics.TotalPacketsReceived++;
+        _statistics.IncrementTotalBytesReceived(data.Length);
+        _statistics.IncrementTotalPacketsReceived();
         _statistics.LastReceiveTime = DateTime.Now;
         DataReceived?.Invoke(this, new DataReceivedEventArgs
         {
@@ -110,8 +110,8 @@ public abstract class CommunicationChannelBase : ICommunicationChannel
 
     protected virtual void OnDataSent(string deviceId, byte[] data, int bytesSent)
     {
-        _statistics.TotalBytesSent += bytesSent;
-        _statistics.TotalPacketsSent++;
+        _statistics.IncrementTotalBytesSent(bytesSent);
+        _statistics.IncrementTotalPacketsSent();
         _statistics.LastSendTime = DateTime.Now;
         DataSent?.Invoke(this, new DataSentEventArgs
         {
@@ -143,13 +143,27 @@ public abstract class CommunicationChannelBase : ICommunicationChannel
 
 public class DeviceConnection
 {
+    private long _bytesReceived;
+    private long _bytesSent;
+
     public string DeviceId { get; set; } = string.Empty;
     public Socket? Socket { get; set; }
     public IPEndPoint? RemoteEndPoint { get; set; }
     public DateTime ConnectTime { get; set; }
     public DateTime LastActiveTime { get; set; }
-    public long BytesReceived { get; set; }
-    public long BytesSent { get; set; }
+    public long BytesReceived
+    {
+        get => Interlocked.Read(ref _bytesReceived);
+        set => Interlocked.Exchange(ref _bytesReceived, value);
+    }
+    public long BytesSent
+    {
+        get => Interlocked.Read(ref _bytesSent);
+        set => Interlocked.Exchange(ref _bytesSent, value);
+    }
     public byte[] ReceiveBuffer { get; set; } = Array.Empty<byte>();
     public CancellationTokenSource? CancellationTokenSource { get; set; }
+
+    public void AddBytesReceived(long count) => Interlocked.Add(ref _bytesReceived, count);
+    public void AddBytesSent(long count) => Interlocked.Add(ref _bytesSent, count);
 }

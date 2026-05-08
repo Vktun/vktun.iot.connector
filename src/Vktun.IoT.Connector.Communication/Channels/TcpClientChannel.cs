@@ -76,7 +76,7 @@ public class TcpClientChannel : CommunicationChannelBase
             var bytesSent = await _socketDriver.SendAsync(data, cancellationToken).ConfigureAwait(false);
             if (_connections.TryGetValue(deviceId, out var connection))
             {
-                connection.BytesSent += bytesSent;
+                connection.AddBytesSent(bytesSent);
                 connection.LastActiveTime = DateTime.Now;
             }
 
@@ -247,7 +247,7 @@ public class TcpClientChannel : CommunicationChannelBase
 
                 if (_connections.TryGetValue(deviceId, out var connection))
                 {
-                    connection.BytesReceived += bytesRead;
+                    connection.AddBytesReceived(bytesRead);
                     connection.LastActiveTime = DateTime.Now;
                 }
 

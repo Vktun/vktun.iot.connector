@@ -49,6 +49,7 @@ public class MqttChannel : CommunicationChannelBase
     private readonly ConcurrentDictionary<string, MqttSubscribeOptions> _subscriptions = new(StringComparer.Ordinal);
     private CancellationTokenSource? _reconnectCts;
     private MqttClientOptions? _clientOptions;
+    private IReconnectPolicy? _reconnectPolicy;
 
     public event EventHandler<MqttMessageEventArgs>? MessageReceived;
 
@@ -66,6 +67,12 @@ public class MqttChannel : CommunicationChannelBase
 
     public override CommunicationType CommunicationType => CommunicationType.Mqtt;
     public override ConnectionMode ConnectionMode => ConnectionMode.Client;
+
+    public IReconnectPolicy? ReconnectPolicy
+    {
+        get => _reconnectPolicy;
+        set => _reconnectPolicy = value;
+    }
 
     public override async Task<bool> OpenAsync(CancellationToken cancellationToken = default)
     {
@@ -186,7 +193,7 @@ public class MqttChannel : CommunicationChannelBase
                 Qos = ToQualityOfService(_mqttConfig.QosLevel)
             }, cancellationToken).ConfigureAwait(false);
 
-            connection.BytesSent += data.Length;
+            connection.AddBytesSent(data.Length);
             connection.LastActiveTime = DateTime.UtcNow;
             OnDataSent(deviceId, data.ToArray(), data.Length);
             return data.Length;
@@ -415,11 +422,38 @@ public class MqttChannel : CommunicationChannelBase
 
     private async Task ReconnectAsync(CancellationToken cancellationToken)
     {
+        var policy = _reconnectPolicy;
+
+        var attempt = 0;
+        Exception? lastException = null;
+
         while (!cancellationToken.IsCancellationRequested && !_mqttClient.IsConnected)
         {
+            attempt++;
+
+            TimeSpan delay;
+            if (policy != null)
+            {
+                var policyDelay = policy.GetNextDelay(attempt, lastException);
+                if (policyDelay == null)
+                {
+                    _logger.Warning($"MQTT reconnect policy exhausted after {attempt} attempts.");
+                    break;
+                }
+
+                delay = policyDelay.Value;
+            }
+            else
+            {
+                var exponentialDelay = Math.Max(100, _mqttConfig.ReconnectDelay) * Math.Pow(2.0, Math.Min(attempt - 1, 8));
+                var cappedDelay = Math.Min(exponentialDelay, 30000);
+                var jitter = cappedDelay * 0.25 * (Random.Shared.NextDouble() * 2 - 1);
+                delay = TimeSpan.FromMilliseconds(Math.Max(100, cappedDelay + jitter));
+            }
+
             try
             {
-                await Task.Delay(Math.Max(100, _mqttConfig.ReconnectDelay), cancellationToken).ConfigureAwait(false);
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 if (_clientOptions == null)
                 {
                     return;
@@ -427,7 +461,8 @@ public class MqttChannel : CommunicationChannelBase
 
                 await _mqttClient.ConnectAsync(_clientOptions, cancellationToken).ConfigureAwait(false);
                 _isConnected = true;
-                _logger.Info("MQTT reconnected.");
+                _logger.Info($"MQTT reconnected after {attempt} attempts.");
+                policy?.Reset();
 
                 foreach (var subscription in _subscriptions.Values)
                 {
@@ -442,7 +477,8 @@ public class MqttChannel : CommunicationChannelBase
             }
             catch (Exception ex)
             {
-                _logger.Warning($"MQTT reconnect failed: {ex.Message}");
+                lastException = ex;
+                _logger.Warning($"MQTT reconnect attempt {attempt} failed: {ex.Message}");
             }
         }
     }
@@ -459,7 +495,7 @@ public class MqttChannel : CommunicationChannelBase
 
             if (_connections.TryGetValue(resolvedDeviceId, out var connection))
             {
-                connection.BytesReceived += payload.Length;
+                connection.AddBytesReceived(payload.Length);
                 connection.LastActiveTime = DateTime.UtcNow;
             }
         }

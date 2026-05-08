@@ -144,7 +144,7 @@ public class SerialChannel : SerialChannelBase
 
             if (_connections.TryGetValue(deviceId, out var connection))
             {
-                connection.BytesSent += bytesWritten;
+                connection.AddBytesSent(bytesWritten);
                 connection.LastActiveTime = DateTime.Now;
             }
 
@@ -269,7 +269,7 @@ public class SerialChannel : SerialChannelBase
 
                 foreach (var connection in _connections.Values)
                 {
-                    connection.BytesReceived += bytesRead;
+                    connection.AddBytesReceived(bytesRead);
                     connection.LastActiveTime = DateTime.Now;
                     OnDataReceived(connection.DeviceId, data);
                 }
