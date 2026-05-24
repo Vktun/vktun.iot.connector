@@ -297,6 +297,135 @@ public class SocketChannelIntegrationTests
     }
 
     [Fact]
+    public async Task TcpOverUdpClientChannel_ShouldSendAndReceiveDatagram()
+    {
+        using var remote = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        var remoteEndpoint = (IPEndPoint)remote.Client.LocalEndPoint!;
+
+        await using var channel = new TcpOverUdpChannel(ConnectionMode.Client, string.Empty, 0, _configProvider, _logger);
+        var received = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DataReceived += (_, args) => received.TrySetResult(args.Data);
+
+        var device = new DeviceInfo
+        {
+            DeviceId = "tcp-over-udp-device",
+            CommunicationType = CommunicationType.TcpOverUdp,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "127.0.0.1",
+            Port = remoteEndpoint.Port
+        };
+
+        Assert.True(await channel.OpenAsync());
+        Assert.True(await channel.ConnectDeviceAsync(device));
+
+        var request = new byte[] { 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x01 };
+        Assert.Equal(request.Length, await channel.SendAsync(device.DeviceId, request));
+
+        var remoteRequest = await remote.ReceiveAsync();
+        Assert.Equal(request, remoteRequest.Buffer);
+
+        var response = new byte[] { 0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0x01, 0x03, 0x02, 0x00, 0x2A };
+        await remote.SendAsync(response, response.Length, remoteRequest.RemoteEndPoint);
+
+        var actual = await received.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal(response, actual);
+    }
+
+    [Fact]
+    public async Task UdpOverTcpClientChannel_ShouldSendAndReceiveLengthPrefixedPayload()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var remotePort = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        await using var channel = new UdpOverTcpChannel(ConnectionMode.Client, string.Empty, 0, _configProvider, _logger);
+
+        var acceptedTask = listener.AcceptTcpClientAsync();
+        var device = new DeviceInfo
+        {
+            DeviceId = "udp-over-tcp-device",
+            CommunicationType = CommunicationType.UdpOverTcp,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "127.0.0.1",
+            Port = remotePort
+        };
+
+        Assert.True(await channel.ConnectDeviceAsync(device));
+        using var accepted = await acceptedTask.WaitAsync(TimeSpan.FromSeconds(3));
+        await using var stream = accepted.GetStream();
+
+        var received = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DataReceived += (_, args) => received.TrySetResult(args.Data);
+
+        var payload = new byte[] { 0x10, 0x20, 0x30 };
+        Assert.Equal(payload.Length + 4, await channel.SendAsync(device.DeviceId, payload));
+
+        var lengthBuffer = new byte[4];
+        await ReadExactlyAsync(stream, lengthBuffer, CancellationToken.None);
+        var length = (lengthBuffer[0] << 24) | (lengthBuffer[1] << 16) | (lengthBuffer[2] << 8) | lengthBuffer[3];
+        Assert.Equal(payload.Length, length);
+
+        var requestBuffer = new byte[length];
+        await ReadExactlyAsync(stream, requestBuffer, CancellationToken.None);
+        Assert.Equal(payload, requestBuffer);
+
+        var response = new byte[] { 0x40, 0x50 };
+        await stream.WriteAsync(new byte[] { 0x00, 0x00, 0x00, (byte)response.Length });
+        await stream.WriteAsync(response);
+        await stream.FlushAsync();
+
+        var actual = await received.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal(response, actual);
+    }
+
+    [Fact]
+    public async Task UdpOverTcpServerChannel_ShouldBindAcceptedClientAndReceiveLengthPrefixedPayload()
+    {
+        var port = GetFreeTcpPort();
+        await using var channel = new UdpOverTcpChannel(ConnectionMode.Server, string.Empty, port, _configProvider, _logger);
+
+        var received = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DataReceived += (_, args) => received.TrySetResult(args.Data);
+
+        var device = new DeviceInfo
+        {
+            DeviceId = "udp-over-tcp-server-device",
+            CommunicationType = CommunicationType.UdpOverTcp,
+            ConnectionMode = ConnectionMode.Server,
+            LocalPort = port,
+            IpAddress = "127.0.0.1"
+        };
+
+        Assert.True(await channel.OpenAsync());
+        var connectTask = channel.ConnectDeviceAsync(device);
+
+        using var remote = new TcpClient();
+        await remote.ConnectAsync(IPAddress.Loopback, port);
+        Assert.True(await connectTask.WaitAsync(TimeSpan.FromSeconds(3)));
+
+        await using var stream = remote.GetStream();
+        var payload = new byte[] { 0x21, 0x22 };
+        await stream.WriteAsync(new byte[] { 0x00, 0x00, 0x00, (byte)payload.Length });
+        await stream.WriteAsync(payload);
+        await stream.FlushAsync();
+
+        var actual = await received.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal(payload, actual);
+
+        var response = new byte[] { 0x31 };
+        Assert.Equal(response.Length + 4, await channel.SendAsync(device.DeviceId, response));
+
+        var lengthBuffer = new byte[4];
+        await ReadExactlyAsync(stream, lengthBuffer, CancellationToken.None);
+        var length = (lengthBuffer[0] << 24) | (lengthBuffer[1] << 16) | (lengthBuffer[2] << 8) | lengthBuffer[3];
+        Assert.Equal(response.Length, length);
+
+        var responseBuffer = new byte[length];
+        await ReadExactlyAsync(stream, responseBuffer, CancellationToken.None);
+        Assert.Equal(response, responseBuffer);
+    }
+
+    [Fact]
     public async Task UdpServerChannel_ShouldBindOnFirstPacketAndSendBack()
     {
         var port = GetFreeUdpPort();
@@ -597,6 +726,21 @@ public class SocketChannelIntegrationTests
     {
         using var client = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
         return ((IPEndPoint)client.Client.LocalEndPoint!).Port;
+    }
+
+    private static async Task ReadExactlyAsync(Stream stream, byte[] buffer, CancellationToken cancellationToken)
+    {
+        var offset = 0;
+        while (offset < buffer.Length)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(offset), cancellationToken);
+            if (read == 0)
+            {
+                throw new EndOfStreamException();
+            }
+
+            offset += read;
+        }
     }
 
     private sealed class TestConfigurationProvider : IConfigurationProvider

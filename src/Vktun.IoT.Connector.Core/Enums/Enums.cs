@@ -4,6 +4,8 @@ namespace Vktun.IoT.Connector.Core.Enums
     {
         Tcp,
         Udp,
+        TcpOverUdp,
+        UdpOverTcp,
         Http,
         Mqtt,
         Serial,

@@ -38,7 +38,7 @@ public static class ConnectionSettingsValidator
         string? localIpAddress,
         int localPort)
     {
-        if (communicationType is not CommunicationType.Tcp and not CommunicationType.Udp)
+        if (!IsNetworkEndpointTransport(communicationType))
         {
             return new ConnectionValidationResult
             {
@@ -96,7 +96,7 @@ public static class ConnectionSettingsValidator
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(settings);
 
-        if (settings.CommunicationType is not CommunicationType.Tcp and not CommunicationType.Udp)
+        if (!IsNetworkEndpointTransport(settings.CommunicationType))
         {
             return;
         }
@@ -251,6 +251,14 @@ public static class ConnectionSettingsValidator
     private static bool IsValidPort(int port)
     {
         return port is >= 1 and <= 65535;
+    }
+
+    private static bool IsNetworkEndpointTransport(CommunicationType communicationType)
+    {
+        return communicationType is CommunicationType.Tcp
+            or CommunicationType.Udp
+            or CommunicationType.TcpOverUdp
+            or CommunicationType.UdpOverTcp;
     }
 
     private static ConnectionValidationResult Valid(NormalizedConnectionSettings settings)

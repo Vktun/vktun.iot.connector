@@ -67,5 +67,41 @@ public class ConnectionSettingsValidatorTests
         Assert.Equal(32001, device.LocalPort);
         Assert.Equal(0, device.Port);
     }
+
+    [Fact]
+    public void TcpOverUdp_ClientMode_ShouldValidateLikeNetworkClient()
+    {
+        var result = ConnectionSettingsValidator.ValidateAndNormalize(
+            CommunicationType.TcpOverUdp,
+            ConnectionMode.Client,
+            "127.0.0.1",
+            1502,
+            string.Empty,
+            0);
+
+        Assert.True(result.IsValid, result.ErrorMessage);
+        Assert.NotNull(result.Settings);
+        Assert.Equal("127.0.0.1", result.Settings.RemoteIpAddressText);
+        Assert.Equal(1502, result.Settings.RemotePort);
+    }
+
+    [Fact]
+    public void UdpOverTcp_ServerMode_LegacyPort_ShouldNormalizeToLocalPort()
+    {
+        var device = new DeviceInfo
+        {
+            DeviceId = "udp-over-tcp-server",
+            CommunicationType = CommunicationType.UdpOverTcp,
+            ConnectionMode = ConnectionMode.Server,
+            Port = 2502,
+            LocalPort = 0
+        };
+
+        var success = ConnectionSettingsValidator.TryNormalize(device, out var errorMessage);
+
+        Assert.True(success, errorMessage);
+        Assert.Equal(2502, device.LocalPort);
+        Assert.Equal(0, device.Port);
+    }
 }
 

@@ -10,6 +10,7 @@ namespace Vktun.IoT.Connector.Communication.Channels;
 
 public class UdpChannel : CommunicationChannelBase
 {
+    private readonly CommunicationType _communicationType;
     private readonly ConnectionMode _mode;
     private readonly IPAddress _localAddress;
     private readonly int _localPort;
@@ -26,7 +27,7 @@ public class UdpChannel : CommunicationChannelBase
     private IPAddress? _expectedRemoteAddress;
     private TaskCompletionSource<bool>? _pendingFirstPacketSource;
 
-    public override CommunicationType CommunicationType => CommunicationType.Udp;
+    public override CommunicationType CommunicationType => _communicationType;
     public override ConnectionMode ConnectionMode => _mode;
 
     public UdpChannel(
@@ -35,8 +36,10 @@ public class UdpChannel : CommunicationChannelBase
         int localPort,
         IConfigurationProvider configProvider,
         ILogger logger,
-        bool allowAnonymousAcceptedClients = false) : base(configProvider, logger)
+        bool allowAnonymousAcceptedClients = false,
+        CommunicationType communicationType = CommunicationType.Udp) : base(configProvider, logger)
     {
+        _communicationType = communicationType;
         _mode = mode;
         _localAddress = string.IsNullOrWhiteSpace(localIpAddress) ? IPAddress.Any : IPAddress.Parse(localIpAddress);
         _localPort = localPort;
@@ -452,7 +455,7 @@ public class UdpChannel : CommunicationChannelBase
         {
             DeviceId = deviceId,
             DeviceName = $"UDP Client {remoteEndPoint}",
-            CommunicationType = CommunicationType.Udp,
+            CommunicationType = _communicationType,
             ConnectionMode = ConnectionMode.Server,
             IpAddress = remoteEndPoint.Address.ToString(),
             Port = remoteEndPoint.Port,

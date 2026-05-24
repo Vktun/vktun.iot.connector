@@ -1,4 +1,5 @@
 using Vktun.IoT.Connector.Business.Factories;
+using Vktun.IoT.Connector.Communication.Channels;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
@@ -94,6 +95,43 @@ public class CommunicationChannelFactoryTests
 
         Assert.Equal(CommunicationType.Mqtt, channel.CommunicationType);
         Assert.Equal(ConnectionMode.Client, channel.ConnectionMode);
+    }
+
+    [Fact]
+    public void CreateChannel_TcpOverUdp_ShouldCreateTcpOverUdpChannel()
+    {
+        var device = new DeviceInfo
+        {
+            DeviceId = "tcp-over-udp",
+            CommunicationType = CommunicationType.TcpOverUdp,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "127.0.0.1",
+            Port = 1502
+        };
+
+        var channel = _factory.CreateChannel(device);
+
+        Assert.IsType<TcpOverUdpChannel>(channel);
+        Assert.Equal(CommunicationType.TcpOverUdp, channel.CommunicationType);
+        Assert.Equal(ConnectionMode.Client, channel.ConnectionMode);
+    }
+
+    [Fact]
+    public void CreateChannel_UdpOverTcp_ShouldCreateUdpOverTcpChannel()
+    {
+        var device = new DeviceInfo
+        {
+            DeviceId = "udp-over-tcp",
+            CommunicationType = CommunicationType.UdpOverTcp,
+            ConnectionMode = ConnectionMode.Server,
+            LocalPort = 2502
+        };
+
+        var channel = _factory.CreateChannel(device);
+
+        Assert.IsType<UdpOverTcpChannel>(channel);
+        Assert.Equal(CommunicationType.UdpOverTcp, channel.CommunicationType);
+        Assert.Equal(ConnectionMode.Server, channel.ConnectionMode);
     }
 
     private sealed class TestConfigurationProvider : IConfigurationProvider
