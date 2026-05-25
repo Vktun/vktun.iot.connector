@@ -78,10 +78,8 @@ public class ModbusTcpParserTests
 
         var mbapHeader = new List<byte>();
         mbapHeader.AddRange(BitConverter.GetBytes((ushort)0).Reverse());
-        mbapHeader.AddRange(BitConverter.GetBytes((ushort)0x0001).Reverse());
-        mbapHeader.Add((byte)0);
-        mbapHeader.Add((byte)1);
-        mbapHeader.AddRange(BitConverter.GetBytes((ushort)(data.Count + 1)).Reverse());
+        mbapHeader.AddRange(BitConverter.GetBytes((ushort)0).Reverse());
+        mbapHeader.AddRange(BitConverter.GetBytes((ushort)data.Count).Reverse());
 
         return mbapHeader.Concat(data).ToArray();
     }
@@ -109,6 +107,157 @@ public class ModbusTcpParserTests
             }
         });
         return config;
+    }
+}
+
+public class ModbusCommonFunctionFrameTests
+{
+    private readonly ILogger _logger = new SerilogLogger();
+
+    [Theory]
+    [MemberData(nameof(TcpFrames))]
+    public void ModbusTcp_Pack_CommonFunction_ShouldProduceExactFrame(string commandName, Dictionary<string, object> parameters, byte[] expected)
+    {
+        var parser = new ModbusTcpParser(_logger);
+        var command = new DeviceCommand
+        {
+            DeviceId = "tcp-device",
+            CommandName = commandName,
+            Parameters = parameters
+        };
+
+        var frame = parser.Pack(command, CreateModbusConfig(ProtocolType.ModbusTcp, ModbusType.Tcp));
+
+        Assert.Equal(expected, frame);
+    }
+
+    [Theory]
+    [MemberData(nameof(RtuFrames))]
+    public void ModbusRtu_Pack_CommonFunction_ShouldProduceExactFrame(string commandName, Dictionary<string, object> parameters, byte[] expectedWithoutCrc)
+    {
+        var parser = new ModbusRtuParser(_logger);
+        var command = new DeviceCommand
+        {
+            DeviceId = "rtu-device",
+            CommandName = commandName,
+            Parameters = parameters
+        };
+
+        var frame = parser.Pack(command, CreateModbusConfig(ProtocolType.ModbusRtu, ModbusType.Rtu));
+        var expected = AppendCrc(expectedWithoutCrc);
+
+        Assert.Equal(expected, frame);
+    }
+
+    [Fact]
+    public void ModbusTcp_Validate_MismatchedMbapLength_ShouldReturnFalse()
+    {
+        var parser = new ModbusTcpParser(_logger);
+        var frame = new byte[]
+        {
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x04, 0x11, 0x03, 0x04, 0x00, 0x01, 0x00, 0x02
+        };
+
+        var isValid = parser.Validate(frame, CreateModbusConfig(ProtocolType.ModbusTcp, ModbusType.Tcp));
+
+        Assert.False(isValid);
+    }
+
+    public static IEnumerable<object[]> TcpFrames()
+    {
+        yield return new object[]
+        {
+            "ReadCoils",
+            new Dictionary<string, object> { ["Address"] = (ushort)0x0013, ["Quantity"] = (ushort)0x0025 },
+            new byte[] { 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x11, 0x01, 0x00, 0x13, 0x00, 0x25 }
+        };
+        yield return new object[]
+        {
+            "ReadDiscreteInputs",
+            new Dictionary<string, object> { ["StartAddress"] = (ushort)0x00C4, ["Quantity"] = (ushort)0x0016 },
+            new byte[] { 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x11, 0x02, 0x00, 0xC4, 0x00, 0x16 }
+        };
+        yield return new object[]
+        {
+            "ReadHoldingRegisters",
+            new Dictionary<string, object> { ["Address"] = (ushort)0x006B, ["Quantity"] = (ushort)0x0003 },
+            new byte[] { 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x11, 0x03, 0x00, 0x6B, 0x00, 0x03 }
+        };
+        yield return new object[]
+        {
+            "ReadInputRegisters",
+            new Dictionary<string, object> { ["Address"] = (ushort)0x0008, ["Quantity"] = (ushort)0x0001 },
+            new byte[] { 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x11, 0x04, 0x00, 0x08, 0x00, 0x01 }
+        };
+        yield return new object[]
+        {
+            "WriteSingleCoil",
+            new Dictionary<string, object> { ["Address"] = (ushort)0x00AC, ["Value"] = true },
+            new byte[] { 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x11, 0x05, 0x00, 0xAC, 0xFF, 0x00 }
+        };
+        yield return new object[]
+        {
+            "WriteSingleRegister",
+            new Dictionary<string, object> { ["Address"] = (ushort)0x0001, ["Value"] = (ushort)0x0003 },
+            new byte[] { 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x11, 0x06, 0x00, 0x01, 0x00, 0x03 }
+        };
+        yield return new object[]
+        {
+            "WriteMultipleCoils",
+            new Dictionary<string, object>
+            {
+                ["Address"] = (ushort)0x0013,
+                ["Values"] = new[] { true, false, true, true, false, false, false, true, false, true }
+            },
+            new byte[] { 0x00, 0x01, 0x00, 0x00, 0x00, 0x09, 0x11, 0x0F, 0x00, 0x13, 0x00, 0x0A, 0x02, 0x8D, 0x02 }
+        };
+        yield return new object[]
+        {
+            "WriteMultipleRegisters",
+            new Dictionary<string, object>
+            {
+                ["Address"] = (ushort)0x0001,
+                ["Values"] = new ushort[] { 0x000A, 0x0102 }
+            },
+            new byte[] { 0x00, 0x01, 0x00, 0x00, 0x00, 0x0B, 0x11, 0x10, 0x00, 0x01, 0x00, 0x02, 0x04, 0x00, 0x0A, 0x01, 0x02 }
+        };
+    }
+
+    public static IEnumerable<object[]> RtuFrames()
+    {
+        foreach (var frame in TcpFrames())
+        {
+            var commandName = (string)frame[0];
+            var parameters = (Dictionary<string, object>)frame[1];
+            var tcpFrame = (byte[])frame[2];
+            var pdu = tcpFrame.Skip(6).ToArray();
+            yield return new object[] { commandName, parameters, pdu };
+        }
+    }
+
+    private static ProtocolConfig CreateModbusConfig(ProtocolType protocolType, ModbusType modbusType)
+    {
+        var config = new ProtocolConfig
+        {
+            ProtocolId = protocolType.ToString(),
+            ProtocolName = protocolType.ToString(),
+            ProtocolType = protocolType
+        };
+        config.SetDefinition(new ModbusConfig
+        {
+            ProtocolId = protocolType.ToString(),
+            ModbusType = modbusType,
+            SlaveId = 0x11,
+            ByteOrder = ByteOrder.BigEndian,
+            WordOrder = WordOrder.HighWordFirst
+        });
+        return config;
+    }
+
+    private static byte[] AppendCrc(byte[] frame)
+    {
+        var crc = Vktun.IoT.Connector.Core.Utils.CrcCalculator.Crc16Modbus(frame);
+        return frame.Concat(new[] { (byte)(crc & 0xFF), (byte)(crc >> 8) }).ToArray();
     }
 }
 

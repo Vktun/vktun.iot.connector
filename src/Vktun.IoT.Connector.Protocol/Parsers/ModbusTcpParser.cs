@@ -11,9 +11,9 @@ public class ModbusTcpParser : IProtocolParser
     private ushort _transactionId;
 
     public ProtocolType Type => ProtocolType.ModbusTcp;
-    public string Name => "Modbus TCP协议解析器";
+    public string Name => "Modbus TCP protocol parser";
     public string Version => "1.0.0";
-    public string Description => "Modbus TCP协议解析器";
+    public string Description => "Modbus TCP protocol parser";
     public string Vendor => "Vktun";
     public string[] SupportedDeviceModels => new[] { "*" };
     public string Author => "Vktun";
@@ -22,7 +22,6 @@ public class ModbusTcpParser : IProtocolParser
     public ModbusTcpParser(ILogger logger)
     {
         _logger = logger;
-        _transactionId = 0;
     }
 
     public List<DeviceData> Parse(byte[] rawData, ProtocolConfig config)
@@ -33,24 +32,31 @@ public class ModbusTcpParser : IProtocolParser
     public List<DeviceData> Parse(ReadOnlySpan<byte> rawData, ProtocolConfig config)
     {
         var result = new List<DeviceData>();
-        
+
         try
         {
+            if (!Validate(rawData.ToArray(), config))
+            {
+                throw new ArgumentException("Invalid Modbus TCP frame.");
+            }
+
             var modbusConfig = GetModbusConfig(config);
             if (modbusConfig == null)
             {
-                throw new InvalidOperationException("未找到Modbus配置");
+                throw new InvalidOperationException("Modbus configuration was not found.");
             }
-            
-            var response = ParseResponse(rawData, modbusConfig);
+
+            var response = ParseResponse(rawData);
             if (response.IsError)
             {
-                _logger.Error($"Modbus TCP错误响应: 从站{response.SlaveId}, 错误码{response.ErrorCode}");
+                _logger.Error($"Modbus TCP exception response: slave={response.SlaveId}, error={response.ErrorCode}");
                 return result;
             }
-            
-            var pointData = ParseDataPoints(response.Data, modbusConfig);
-            
+
+            var pointData = IsReadFunction(response.FunctionCode)
+                ? ParseDataPoints(response.Data, modbusConfig)
+                : new List<DataPoint>();
+
             result.Add(new DeviceData
             {
                 DeviceId = $"ModbusTCP_Slave_{response.SlaveId}",
@@ -64,15 +70,15 @@ public class ModbusTcpParser : IProtocolParser
         }
         catch (Exception ex)
         {
-            _logger.Error($"Modbus TCP解析失败: {ex.Message}", ex);
+            _logger.Error($"Modbus TCP parse failed: {ex.Message}", ex);
         }
-        
+
         return result;
     }
 
     public byte[] Pack(DeviceData data, ProtocolConfig config)
     {
-        throw new NotImplementedException("请使用 PackCommand 方法打包命令");
+        throw new NotImplementedException("Use PackCommand to build Modbus commands.");
     }
 
     public byte[] Pack(DeviceCommand command, ProtocolConfig config)
@@ -80,21 +86,34 @@ public class ModbusTcpParser : IProtocolParser
         var modbusConfig = GetModbusConfig(config);
         if (modbusConfig == null)
         {
-            throw new InvalidOperationException("未找到Modbus配置");
+            throw new InvalidOperationException("Modbus configuration was not found.");
         }
-        
+
         return PackCommand(command, modbusConfig);
     }
 
     public bool Validate(byte[] rawData, ProtocolConfig config)
     {
-        if (rawData.Length < 9)
+        if (rawData.Length < 8)
         {
             return false;
         }
-        
+
+        var protocolId = (rawData[2] << 8) | rawData[3];
+        if (protocolId != 0)
+        {
+            return false;
+        }
+
         var length = (rawData[4] << 8) | rawData[5];
-        return rawData.Length >= length + 6;
+        return length >= 2 && rawData.Length == length + 6;
+    }
+
+    public byte[] PackCommand(DeviceCommand command, ModbusConfig config)
+    {
+        _transactionId++;
+        var pdu = ModbusCommandBuilder.BuildPdu(command);
+        return BuildTcpFrame(_transactionId, (byte)config.SlaveId, pdu);
     }
 
     private ModbusConfig? GetModbusConfig(ProtocolConfig config)
@@ -109,48 +128,44 @@ public class ModbusTcpParser : IProtocolParser
         {
             return null;
         }
-        
+
         return JsonSerializer.Deserialize<ModbusConfig>(modbusJson);
     }
 
-    private ModbusResponse ParseResponse(ReadOnlySpan<byte> data, ModbusConfig config)
+    private static ModbusResponse ParseResponse(ReadOnlySpan<byte> data)
     {
-        if (data.Length < 9)
-        {
-            throw new ArgumentException("响应数据长度不足");
-        }
-        
         var response = new ModbusResponse
         {
             TransactionId = (ushort)((data[0] << 8) | data[1]),
             SlaveId = data[6],
             FunctionCode = (ModbusFunctionCode)data[7]
         };
-        
+
         if ((byte)response.FunctionCode >= 0x80)
         {
             response.IsError = true;
             response.ErrorCode = data[8];
             return response;
         }
-        
-        var byteCount = data[8];
-        response.Data = data.Slice(9, byteCount).ToArray();
-        
+
+        response.Data = IsReadFunction(response.FunctionCode)
+            ? ReadByteCountPayload(data)
+            : data.Slice(8, data.Length - 8).ToArray();
+
         return response;
     }
 
     private List<DataPoint> ParseDataPoints(byte[] data, ModbusConfig config)
     {
         var result = new List<DataPoint>();
-        
+
         foreach (var point in config.Points)
         {
             try
             {
                 var value = ExtractValue(data, point, config);
                 var convertedValue = ConvertValue(value, point.Ratio, point.OffsetValue);
-                
+
                 result.Add(new DataPoint
                 {
                     PointName = point.PointName,
@@ -164,58 +179,48 @@ public class ModbusTcpParser : IProtocolParser
             }
             catch (Exception ex)
             {
-                _logger.Error($"解析点位 {point.PointName} 失败: {ex.Message}", ex);
+                _logger.Error($"Failed to parse Modbus point {point.PointName}: {ex.Message}", ex);
             }
         }
-        
+
         return result;
     }
 
-    private object ExtractValue(byte[] data, ModbusPointConfig point, ModbusConfig config)
+    private static object ExtractValue(byte[] data, ModbusPointConfig point, ModbusConfig config)
     {
-        var byteIndex = point.Address * (point.RegisterType == ModbusRegisterType.Coil || 
-                                         point.RegisterType == ModbusRegisterType.DiscreteInput ? 0 : 2);
-        
+        var byteIndex = point.RegisterType is ModbusRegisterType.Coil or ModbusRegisterType.DiscreteInput
+            ? 0
+            : point.Address * 2;
+
         return point.RegisterType switch
         {
             ModbusRegisterType.Coil => ExtractCoil(data, point.Address),
-            ModbusRegisterType.DiscreteInput => ExtractDiscreteInput(data, point.Address),
+            ModbusRegisterType.DiscreteInput => ExtractCoil(data, point.Address),
             ModbusRegisterType.InputRegister => ExtractRegister(data, byteIndex, point.DataType, config),
             ModbusRegisterType.HoldingRegister => ExtractRegister(data, byteIndex, point.DataType, config),
-            _ => throw new NotSupportedException($"不支持的寄存器类型: {point.RegisterType}")
+            _ => throw new NotSupportedException($"Unsupported Modbus register type: {point.RegisterType}")
         };
     }
 
-    private bool ExtractCoil(byte[] data, ushort address)
+    private static bool ExtractCoil(byte[] data, ushort address)
     {
         var byteIndex = address / 8;
         var bitIndex = address % 8;
-        
-        if (byteIndex >= data.Length)
-        {
-            return false;
-        }
-        
-        return (data[byteIndex] & (1 << bitIndex)) != 0;
+
+        return byteIndex < data.Length && (data[byteIndex] & (1 << bitIndex)) != 0;
     }
 
-    private bool ExtractDiscreteInput(byte[] data, ushort address)
-    {
-        return ExtractCoil(data, address);
-    }
-
-    private object ExtractRegister(byte[] data, int byteIndex, DataType dataType, ModbusConfig config)
+    private static object ExtractRegister(byte[] data, int byteIndex, DataType dataType, ModbusConfig config)
     {
         var byteCount = GetByteCount(dataType);
-        
         if (byteIndex + byteCount > data.Length)
         {
-            throw new ArgumentException($"数据长度不足: 需要{byteCount}字节, 实际{data.Length - byteIndex}字节");
+            throw new ArgumentException($"Not enough data. Need {byteCount} bytes, actual {data.Length - byteIndex} bytes.");
         }
-        
+
         var bytes = new byte[byteCount];
         Array.Copy(data, byteIndex, bytes, 0, byteCount);
-        
+
         if (config.ByteOrder == ByteOrder.BigEndian)
         {
             if (byteCount == 2)
@@ -230,16 +235,11 @@ public class ModbusTcpParser : IProtocolParser
                 }
                 else
                 {
-                    var temp = new byte[4];
-                    temp[0] = bytes[2];
-                    temp[1] = bytes[3];
-                    temp[2] = bytes[0];
-                    temp[3] = bytes[1];
-                    bytes = temp;
+                    bytes = new[] { bytes[2], bytes[3], bytes[0], bytes[1] };
                 }
             }
         }
-        
+
         return dataType switch
         {
             DataType.UInt16 => BitConverter.ToUInt16(bytes, 0),
@@ -251,7 +251,7 @@ public class ModbusTcpParser : IProtocolParser
         };
     }
 
-    private int GetByteCount(DataType dataType)
+    private static int GetByteCount(DataType dataType)
     {
         return dataType switch
         {
@@ -263,12 +263,11 @@ public class ModbusTcpParser : IProtocolParser
         };
     }
 
-    private double ConvertValue(object value, double ratio, double offset)
+    private static double ConvertValue(object value, double ratio, double offset)
     {
         try
         {
-            var numericValue = Convert.ToDouble(value);
-            return numericValue * ratio + offset;
+            return Convert.ToDouble(value) * ratio + offset;
         }
         catch
         {
@@ -276,79 +275,43 @@ public class ModbusTcpParser : IProtocolParser
         }
     }
 
-    public byte[] PackCommand(DeviceCommand command, ModbusConfig config)
+    private static byte[] BuildTcpFrame(ushort transactionId, byte unitId, byte[] pdu)
     {
-        _transactionId++;
-        
-        var request = new ModbusRequest
+        var frame = new List<byte>
         {
-            TransactionId = _transactionId,
-            UnitId = config.SlaveId,
-            SlaveId = config.SlaveId,
-            FunctionCode = GetFunctionCode(command.CommandName),
-            StartAddress = Convert.ToUInt16(command.Parameters.GetValueOrDefault("Address", 0)),
-            Quantity = Convert.ToUInt16(command.Parameters.GetValueOrDefault("Quantity", 1))
+            (byte)(transactionId >> 8),
+            (byte)(transactionId & 0xFF),
+            0x00,
+            0x00,
+            0x00,
+            (byte)(pdu.Length + 1),
+            unitId
         };
-        
-        if (command.CommandName == "WriteSingleCoil")
-        {
-            request.Data = new byte[] { (bool)command.Parameters["Value"] ? (byte)0xFF : (byte)0x00, 0x00 };
-        }
-        else if (command.CommandName == "WriteSingleRegister")
-        {
-            var value = (ushort)command.Parameters["Value"];
-            request.Data = new byte[] { (byte)(value >> 8), (byte)(value & 0xFF) };
-        }
-        
-        return BuildTcpFrame(request);
-    }
-
-    private ModbusFunctionCode GetFunctionCode(string commandName)
-    {
-        return commandName switch
-        {
-            "ReadCoils" => ModbusFunctionCode.ReadCoils,
-            "ReadDiscreteInputs" => ModbusFunctionCode.ReadDiscreteInputs,
-            "ReadHoldingRegisters" => ModbusFunctionCode.ReadHoldingRegisters,
-            "ReadInputRegisters" => ModbusFunctionCode.ReadInputRegisters,
-            "WriteSingleCoil" => ModbusFunctionCode.WriteSingleCoil,
-            "WriteSingleRegister" => ModbusFunctionCode.WriteSingleRegister,
-            "WriteMultipleCoils" => ModbusFunctionCode.WriteMultipleCoils,
-            "WriteMultipleRegisters" => ModbusFunctionCode.WriteMultipleRegisters,
-            _ => throw new NotSupportedException($"不支持的命令: {commandName}")
-        };
-    }
-
-    private byte[] BuildTcpFrame(ModbusRequest request)
-    {
-        var frame = new List<byte>();
-        
-        frame.Add((byte)(request.TransactionId >> 8));
-        frame.Add((byte)(request.TransactionId & 0xFF));
-        
-        frame.Add(0x00);
-        frame.Add(0x00);
-        
-        var pduLength = (byte)(request.Data != null ? request.Data.Length + 6 : 6);
-        frame.Add(0x00);
-        frame.Add(pduLength);
-        
-        frame.Add(request.UnitId);
-        frame.Add((byte)request.FunctionCode);
-        
-        frame.Add((byte)(request.StartAddress >> 8));
-        frame.Add((byte)(request.StartAddress & 0xFF));
-        
-        if (request.Data != null && request.Data.Length > 0)
-        {
-            frame.AddRange(request.Data);
-        }
-        else
-        {
-            frame.Add((byte)(request.Quantity >> 8));
-            frame.Add((byte)(request.Quantity & 0xFF));
-        }
-        
+        frame.AddRange(pdu);
         return frame.ToArray();
+    }
+
+    private static bool IsReadFunction(ModbusFunctionCode functionCode)
+    {
+        return functionCode is ModbusFunctionCode.ReadCoils
+            or ModbusFunctionCode.ReadDiscreteInputs
+            or ModbusFunctionCode.ReadHoldingRegisters
+            or ModbusFunctionCode.ReadInputRegisters;
+    }
+
+    private static byte[] ReadByteCountPayload(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 9)
+        {
+            throw new ArgumentException("Modbus TCP read response is too short.");
+        }
+
+        var byteCount = data[8];
+        if (data.Length < 9 + byteCount)
+        {
+            throw new ArgumentException("Modbus TCP read response byte count exceeds frame length.");
+        }
+
+        return data.Slice(9, byteCount).ToArray();
     }
 }

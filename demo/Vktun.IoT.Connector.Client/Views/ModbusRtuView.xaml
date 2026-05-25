@@ -4,7 +4,7 @@
              xmlns:prism="http://prismlibrary.com/"
              prism:ViewModelLocator.AutoWireViewModel="True"
              Padding="10">
-    
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -13,135 +13,101 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        
-        <GroupBox Grid.Row="0" Header="串口配置" Style="{StaticResource CardGroupBox}">
+
+        <GroupBox Grid.Row="0" Header="Serial" Style="{StaticResource CardGroupBox}">
+            <WrapPanel>
+                <TextBlock Text="Port:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox ItemsSource="{Binding PortNames}" SelectedItem="{Binding SelectedPortName}" Style="{StaticResource InputComboBox}" Width="90"/>
+                <TextBlock Text="Baud:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox ItemsSource="{Binding BaudRates}" SelectedItem="{Binding SelectedBaudRate}" Style="{StaticResource InputComboBox}" Width="90"/>
+                <TextBlock Text="Data:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox ItemsSource="{Binding DataBitsList}" SelectedItem="{Binding SelectedDataBits}" Style="{StaticResource InputComboBox}" Width="60"/>
+                <TextBlock Text="Parity:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox ItemsSource="{Binding ParityList}" SelectedItem="{Binding SelectedParity}" Style="{StaticResource InputComboBox}" Width="80"/>
+                <TextBlock Text="Stop:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox ItemsSource="{Binding StopBitsList}" SelectedItem="{Binding SelectedStopBits}" Style="{StaticResource InputComboBox}" Width="90"/>
+                <TextBlock Text="Slave:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Text="{Binding SlaveId, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputTextBox}" Width="60"/>
+                <Button Content="Open" Command="{Binding OpenCommand}" Style="{StaticResource PrimaryButton}" Width="80"/>
+                <Button Content="Close" Command="{Binding CloseCommand}" Style="{StaticResource SecondaryButton}" Width="80"/>
+            </WrapPanel>
+        </GroupBox>
+
+        <GroupBox Grid.Row="1" Header="Read / Write / Poll" Style="{StaticResource CardGroupBox}" Margin="10,0">
+            <WrapPanel>
+                <TextBlock Text="Type:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox ItemsSource="{Binding RegisterTypes}" SelectedItem="{Binding SelectedRegisterType}" Style="{StaticResource InputComboBox}" Width="130"/>
+                <TextBlock Text="Address:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputTextBox}" Width="80"/>
+                <TextBlock Text="Qty:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Text="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputTextBox}" Width="60"/>
+                <TextBlock Text="Data:" Style="{StaticResource LabelTextBlock}"/>
+                <ComboBox ItemsSource="{Binding DataTypes}" SelectedItem="{Binding SelectedDataType}" Style="{StaticResource InputComboBox}" Width="100"/>
+                <TextBlock Text="Value:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Text="{Binding WriteValue, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputTextBox}" Width="130"/>
+                <Button Content="Read" Command="{Binding ReadCommand}" Style="{StaticResource PrimaryButton}" Width="80"/>
+                <Button Content="Write" Command="{Binding WriteCommand}" Style="{StaticResource SecondaryButton}" Width="80"/>
+                <TextBlock Text="Interval:" Style="{StaticResource LabelTextBlock}"/>
+                <TextBox Text="{Binding PollInterval, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputTextBox}" Width="80"/>
+                <Button Content="Start Poll" Command="{Binding StartPollingCommand}" Style="{StaticResource PrimaryButton}" Width="95"/>
+                <Button Content="Stop Poll" Command="{Binding StopPollingCommand}" Style="{StaticResource SecondaryButton}" Width="90"/>
+            </WrapPanel>
+        </GroupBox>
+
+        <GroupBox Grid.Row="2" Header="Batch" Style="{StaticResource CardGroupBox}" Margin="10,0">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                
-                <TextBlock Grid.Column="0" Text="端口:" Style="{StaticResource LabelTextBlock}"/>
-                <ComboBox Grid.Column="1" ItemsSource="{Binding PortNames}"
-                         SelectedItem="{Binding SelectedPortName}"
-                         Style="{StaticResource InputComboBox}" Width="80"/>
-                
-                <TextBlock Grid.Column="2" Text="波特率:" Style="{StaticResource LabelTextBlock}"/>
-                <ComboBox Grid.Column="3" ItemsSource="{Binding BaudRates}"
-                         SelectedItem="{Binding SelectedBaudRate}"
-                         Style="{StaticResource InputComboBox}" Width="80"/>
-                
-                <TextBlock Grid.Column="4" Text="数据位:" Style="{StaticResource LabelTextBlock}"/>
-                <ComboBox Grid.Column="5" ItemsSource="{Binding DataBitsList}"
-                         SelectedItem="{Binding SelectedDataBits}"
-                         Style="{StaticResource InputComboBox}" Width="60"/>
-                
-                <TextBlock Grid.Column="6" Text="停止位:" Style="{StaticResource LabelTextBlock}"/>
-                <ComboBox Grid.Column="7" ItemsSource="{Binding StopBitsList}"
-                         SelectedItem="{Binding SelectedStopBits}"
-                         Style="{StaticResource InputComboBox}" Width="60"/>
-                
-                <StackPanel Grid.Column="8" Orientation="Horizontal">
-                    <Button Content="打开" Command="{Binding OpenCommand}"
-                           Style="{StaticResource PrimaryButton}" Width="80"/>
-                    <Button Content="关闭" Command="{Binding CloseCommand}"
-                           Style="{StaticResource SecondaryButton}" Width="80"/>
+
+                <DataGrid Grid.Column="0" ItemsSource="{Binding TestDataList}"
+                          Style="{StaticResource DataGridStyle}"
+                          SelectedItem="{Binding SelectedTestData}"
+                          Height="140">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Address" Binding="{Binding Address}" Width="80"/>
+                        <DataGridTextColumn Header="Data" Binding="{Binding DataType}" Width="90"/>
+                        <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="120"/>
+                        <DataGridTextColumn Header="Desc" Binding="{Binding Description}" Width="*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <StackPanel Grid.Column="1" Orientation="Vertical" Margin="10,0,0,0">
+                    <Button Content="Add" Command="{Binding AddTestDataCommand}" Style="{StaticResource PrimaryButton}" Width="100"/>
+                    <Button Content="Remove" Command="{Binding RemoveTestDataCommand}" Style="{StaticResource SecondaryButton}" Width="100"/>
+                    <Button Content="Batch Read" Command="{Binding BatchReadCommand}" Style="{StaticResource PrimaryButton}" Width="100"/>
+                    <Button Content="Batch Write" Command="{Binding BatchWriteCommand}" Style="{StaticResource SecondaryButton}" Width="100"/>
                 </StackPanel>
             </Grid>
         </GroupBox>
-        
-        <GroupBox Grid.Row="1" Header="从站配置" Style="{StaticResource CardGroupBox}" Margin="10,0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                
-                <TextBlock Grid.Column="0" Text="从站ID:" Style="{StaticResource LabelTextBlock}"/>
-                <TextBox Grid.Column="1" Text="{Binding SlaveId, UpdateSourceTrigger=PropertyChanged}"
-                        Style="{StaticResource InputTextBox}" Width="60"/>
-                
-                <TextBlock Grid.Column="2" Text="校验位:" Style="{StaticResource LabelTextBlock}"/>
-                <ComboBox Grid.Column="3" ItemsSource="{Binding ParityList}"
-                         SelectedItem="{Binding SelectedParity}"
-                         Style="{StaticResource InputComboBox}" Width="80"/>
-            </Grid>
-        </GroupBox>
-        
-        <GroupBox Grid.Row="2" Header="读写操作" Style="{StaticResource CardGroupBox}" Margin="10,0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                
-                <TextBlock Grid.Column="0" Text="寄存器类型:" Style="{StaticResource LabelTextBlock}"/>
-                <ComboBox Grid.Column="1" ItemsSource="{Binding RegisterTypes}"
-                         SelectedItem="{Binding SelectedRegisterType}"
-                         Style="{StaticResource InputComboBox}" Width="120"/>
-                
-                <TextBlock Grid.Column="2" Text="地址:" Style="{StaticResource LabelTextBlock}"/>
-                <TextBox Grid.Column="3" Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}"
-                        Style="{StaticResource InputTextBox}" Width="80"/>
-                
-                <TextBlock Grid.Column="4" Text="数据类型:" Style="{StaticResource LabelTextBlock}"/>
-                <ComboBox Grid.Column="5" ItemsSource="{Binding DataTypes}"
-                         SelectedItem="{Binding SelectedDataType}"
-                         Style="{StaticResource InputComboBox}" Width="100"/>
-                
-                <TextBlock Grid.Column="6" Text="写入值:" Style="{StaticResource LabelTextBlock}"/>
-                <TextBox Grid.Column="7" Text="{Binding WriteValue, UpdateSourceTrigger=PropertyChanged}"
-                        Style="{StaticResource InputTextBox}" Width="100"/>
-                
-                <StackPanel Grid.Column="8" Orientation="Horizontal">
-                    <Button Content="读取" Command="{Binding ReadCommand}"
-                           Style="{StaticResource PrimaryButton}" Width="80"/>
-                    <Button Content="写入" Command="{Binding WriteCommand}"
-                           Style="{StaticResource SecondaryButton}" Width="80"/>
-                </StackPanel>
-            </Grid>
-        </GroupBox>
-        
-        <GroupBox Grid.Row="3" Header="测试结果" Style="{StaticResource CardGroupBox}" Margin="10,0">
-            <DataGrid ItemsSource="{Binding TestResults}"
-                     Style="{StaticResource DataGridStyle}">
+
+        <GroupBox Grid.Row="3" Header="Results" Style="{StaticResource CardGroupBox}" Margin="10,0">
+            <DataGrid ItemsSource="{Binding TestResults}" Style="{StaticResource DataGridStyle}">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="地址" Binding="{Binding Address}" Width="80"/>
-                    <DataGridTextColumn Header="值" Binding="{Binding Value}" Width="100"/>
-                    <DataGridTextColumn Header="数据类型" Binding="{Binding DataType}" Width="80"/>
-                    <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="60"/>
-                    <DataGridTextColumn Header="耗时(ms)" Binding="{Binding Duration}" Width="80"/>
-                    <DataGridTextColumn Header="时间" Binding="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss}'}" Width="80"/>
-                    <DataGridTextColumn Header="错误信息" Binding="{Binding ErrorMessage}" Width="*"/>
+                    <DataGridTextColumn Header="Address" Binding="{Binding Address}" Width="80"/>
+                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="120"/>
+                    <DataGridTextColumn Header="Data" Binding="{Binding DataType}" Width="80"/>
+                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="70"/>
+                    <DataGridTextColumn Header="Tx" Binding="{Binding Request}" Width="220"/>
+                    <DataGridTextColumn Header="Rx" Binding="{Binding Response}" Width="220"/>
+                    <DataGridTextColumn Header="ms" Binding="{Binding Duration}" Width="70"/>
+                    <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat='{}{0:HH:mm:ss}'}" Width="80"/>
+                    <DataGridTextColumn Header="Error" Binding="{Binding ErrorMessage}" Width="*"/>
                 </DataGrid.Columns>
             </DataGrid>
         </GroupBox>
-        
-        <GroupBox Grid.Row="4" Header="通信日志" Style="{StaticResource CardGroupBox}" Margin="10,0,10,10">
-            <TextBox Text="{Binding LogMessages}" IsReadOnly="True"
-                    VerticalScrollBarVisibility="Auto"
-                    HorizontalScrollBarVisibility="Auto"
-                    TextWrapping="Wrap"
-                    FontFamily="Consolas"
-                    FontSize="12"
-                    Background="#F5F5F5"
-                    Height="100"/>
+
+        <GroupBox Grid.Row="4" Header="Log" Style="{StaticResource CardGroupBox}" Margin="10,0,10,10">
+            <TextBox Text="{Binding LogMessages}"
+                     IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     TextWrapping="NoWrap"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     Background="#F5F5F5"
+                     Height="100"/>
         </GroupBox>
     </Grid>
 </UserControl>

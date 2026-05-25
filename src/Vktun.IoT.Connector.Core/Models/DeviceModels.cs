@@ -15,6 +15,9 @@ namespace Vktun.IoT.Connector.Core.Models
         public int LocalPort { get; set; }
         public string SerialPort { get; set; } = string.Empty;
         public int BaudRate { get; set; } = 9600;
+        public int DataBits { get; set; } = 8;
+        public SerialParity Parity { get; set; } = SerialParity.None;
+        public SerialStopBits StopBits { get; set; } = SerialStopBits.One;
         public int SlaveId { get; set; }
         public ProtocolType ProtocolType { get; set; }
         public string ProtocolId { get; set; } = string.Empty;

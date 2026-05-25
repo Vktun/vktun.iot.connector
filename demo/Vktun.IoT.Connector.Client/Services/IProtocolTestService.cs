@@ -7,6 +7,7 @@ public interface IProtocolTestService
 {
     Task<DeviceTestResult> ReadAsync(ProtocolType protocolType, string address, DataType dataType, Dictionary<string, object>? parameters = null);
     Task<DeviceTestResult> WriteAsync(ProtocolType protocolType, string address, object value, DataType dataType, Dictionary<string, object>? parameters = null);
+    IAsyncEnumerable<DeviceTestResult> PollAsync(ProtocolType protocolType, string address, DataType dataType, int intervalMs, Dictionary<string, object>? parameters = null, CancellationToken cancellationToken = default);
     Task<BatchTestResult> BatchReadAsync(ProtocolType protocolType, List<ProtocolTestData> testDataList);
     Task<BatchTestResult> BatchWriteAsync(ProtocolType protocolType, List<ProtocolTestData> testDataList);
     bool IsConnected(ProtocolType protocolType);

@@ -31,6 +31,7 @@ public class VktunIoTConnectorServiceCollectionExtensionsTests
         Assert.NotNull(provider.GetRequiredService<ICommunicationChannelFactory>());
         Assert.NotNull(provider.GetRequiredService<IProtocolParserFactory>());
         Assert.NotNull(provider.GetRequiredService<IDeviceCommandExecutor>());
+        Assert.NotNull(provider.GetRequiredService<IModbusClient>());
         Assert.NotNull(provider.GetRequiredService<IDeviceManager>());
         Assert.NotNull(provider.GetRequiredService<Vktun.IoT.Connector.Core.Interfaces.ITaskScheduler>());
         Assert.IsType<DataCache>(provider.GetRequiredService<IDataCache>());

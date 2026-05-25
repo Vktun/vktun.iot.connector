@@ -5,6 +5,8 @@ using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
 using Vktun.IoT.Connector.Core.Utils;
 using Vktun.IoT.Connector.Serial.Channels;
+using SerialChannelParity = Vktun.IoT.Connector.Serial.Channels.Parity;
+using SerialChannelStopBits = Vktun.IoT.Connector.Serial.Channels.StopBits;
 
 namespace Vktun.IoT.Connector.Business.Factories;
 
@@ -52,7 +54,14 @@ public class CommunicationChannelFactory : ICommunicationChannelFactory
                 _logger),
             (CommunicationType.Http, ConnectionMode.Client) => new HttpClientChannel(_configProvider, _logger, _httpClientFactory),
             (CommunicationType.Mqtt, ConnectionMode.Client) => CreateMqttChannel(device),
-            (CommunicationType.Serial, _) => new SerialChannel(device.SerialPort, device.BaudRate, _configProvider, _logger),
+            (CommunicationType.Serial, _) => new SerialChannel(
+                device.SerialPort,
+                device.BaudRate,
+                _configProvider,
+                _logger,
+                device.DataBits,
+                MapParity(device.Parity),
+                MapStopBits(device.StopBits)),
             _ => throw new NotSupportedException($"Unsupported channel type: {device.CommunicationType}/{device.ConnectionMode}")
         };
 
@@ -164,5 +173,27 @@ public class CommunicationChannelFactory : ICommunicationChannelFactory
         }
 
         return new List<string>();
+    }
+
+    private static SerialChannelParity MapParity(SerialParity parity)
+    {
+        return parity switch
+        {
+            SerialParity.Odd => SerialChannelParity.Odd,
+            SerialParity.Even => SerialChannelParity.Even,
+            SerialParity.Mark => SerialChannelParity.Mark,
+            SerialParity.Space => SerialChannelParity.Space,
+            _ => SerialChannelParity.None
+        };
+    }
+
+    private static SerialChannelStopBits MapStopBits(SerialStopBits stopBits)
+    {
+        return stopBits switch
+        {
+            SerialStopBits.OnePointFive => SerialChannelStopBits.OnePointFive,
+            SerialStopBits.Two => SerialChannelStopBits.Two,
+            _ => SerialChannelStopBits.One
+        };
     }
 }

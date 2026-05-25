@@ -42,6 +42,22 @@ namespace Vktun.IoT.Connector.Core.Enums
         LittleEndian
     }
 
+    public enum SerialParity
+    {
+        None,
+        Odd,
+        Even,
+        Mark,
+        Space
+    }
+
+    public enum SerialStopBits
+    {
+        One,
+        OnePointFive,
+        Two
+    }
+
     public enum DataType
     {
         Bool,

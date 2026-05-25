@@ -6,6 +6,7 @@ public class DeviceTestResult
     public object? Value { get; set; }
     public string DataType { get; set; } = string.Empty;
     public bool IsSuccess { get; set; }
+    public string Status => IsSuccess ? "OK" : "Fail";
     public string? ErrorMessage { get; set; }
     public DateTime Timestamp { get; set; } = DateTime.Now;
     public string? Request { get; set; }

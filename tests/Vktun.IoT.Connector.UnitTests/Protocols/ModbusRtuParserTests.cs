@@ -32,13 +32,13 @@ public class ModbusRtuParserTests
     }
 
     [Fact]
-    public void Parse_InvalidCrc_CurrentBehaviorStillParses()
+    public void Parse_InvalidCrc_ReturnsEmptyList()
     {
         var invalidFrame = new byte[] { 0x01, 0x03, 0x04, 0x00, 0x64, 0x00, 0xC8, 0xFF, 0xFF };
 
         var result = _parser.Parse(invalidFrame, _config);
 
-        Assert.Single(result);
+        Assert.Empty(result);
     }
 
     [Fact]
