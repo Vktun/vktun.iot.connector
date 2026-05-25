@@ -23,12 +23,14 @@ public class Bootstrapper : PrismBootstrapper
 
         containerRegistry.RegisterInstance<IServiceProvider>(sdkProvider);
         containerRegistry.RegisterInstance(sdkProvider.GetRequiredService<IModbusClient>());
+        containerRegistry.RegisterInstance(sdkProvider.GetRequiredService<IModbusSlaveServer>());
         containerRegistry.RegisterSingleton<IProtocolTestService, ProtocolTestService>();
         containerRegistry.RegisterSingleton<IConnectionService, ConnectionService>();
         containerRegistry.RegisterSingleton<ISocketTestService, SocketTestService>();
         
         containerRegistry.RegisterForNavigation<ModbusTcpView>();
         containerRegistry.RegisterForNavigation<ModbusRtuView>();
+        containerRegistry.RegisterForNavigation<ModbusSlaveView>();
         containerRegistry.RegisterForNavigation<SiemensView>();
         containerRegistry.RegisterForNavigation<MitsubishiView>();
         containerRegistry.RegisterForNavigation<OmronView>();

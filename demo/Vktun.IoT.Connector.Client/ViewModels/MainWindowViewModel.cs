@@ -1,10 +1,8 @@
 using System.Collections.ObjectModel;
-using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Prism.Mvvm;
 using Prism.Navigation.Regions;
-using Vktun.IoT.Connector.Core.Enums;
 
 namespace Vktun.IoT.Connector.Client.ViewModels;
 
@@ -19,8 +17,37 @@ public class MainWindowViewModel : BindableBase
 {
     private readonly IRegionManager _regionManager;
     private readonly DispatcherTimer _timer;
-    
     private MenuItem? _selectedMenuItem;
+    private string _statusMessage = "Ready";
+    private DateTime _currentTime = DateTime.Now;
+    private bool _isConnected;
+
+    public MainWindowViewModel(IRegionManager regionManager)
+    {
+        _regionManager = regionManager;
+
+        MenuItems = new ObservableCollection<MenuItem>
+        {
+            new() { Title = "Modbus TCP", Icon = "M", ViewName = "ModbusTcpView" },
+            new() { Title = "Modbus RTU", Icon = "M", ViewName = "ModbusRtuView" },
+            new() { Title = "Modbus Slave", Icon = "S", ViewName = "ModbusSlaveView" },
+            new() { Title = "Siemens S7", Icon = "P", ViewName = "SiemensView" },
+            new() { Title = "Mitsubishi PLC", Icon = "P", ViewName = "MitsubishiView" },
+            new() { Title = "Omron PLC", Icon = "P", ViewName = "OmronView" },
+            new() { Title = "Serial Port", Icon = "C", ViewName = "SerialPortView" },
+            new() { Title = "Socket Debug", Icon = "S", ViewName = "SocketDebugView" }
+        };
+
+        _timer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _timer.Tick += (_, _) => CurrentTime = DateTime.Now;
+        _timer.Start();
+
+        SelectedMenuItem = MenuItems[0];
+    }
+
     public MenuItem? SelectedMenuItem
     {
         get => _selectedMenuItem;
@@ -33,22 +60,19 @@ public class MainWindowViewModel : BindableBase
             }
         }
     }
-    
-    private string _statusMessage = "Ready";
+
     public string StatusMessage
     {
         get => _statusMessage;
         set => SetProperty(ref _statusMessage, value);
     }
-    
-    private DateTime _currentTime = DateTime.Now;
+
     public DateTime CurrentTime
     {
         get => _currentTime;
         set => SetProperty(ref _currentTime, value);
     }
-    
-    private bool _isConnected;
+
     public bool IsConnected
     {
         get => _isConnected;
@@ -59,40 +83,15 @@ public class MainWindowViewModel : BindableBase
             RaisePropertyChanged(nameof(ConnectionStatusText));
         }
     }
-    
-    public Brush ConnectionStatusColor => IsConnected 
-        ? new SolidColorBrush(Color.FromRgb(76, 175, 80)) 
+
+    public Brush ConnectionStatusColor => IsConnected
+        ? new SolidColorBrush(Color.FromRgb(76, 175, 80))
         : new SolidColorBrush(Color.FromRgb(244, 67, 54));
-    
+
     public string ConnectionStatusText => IsConnected ? "Connected" : "Disconnected";
-    
+
     public ObservableCollection<MenuItem> MenuItems { get; }
-    
-    public MainWindowViewModel(IRegionManager regionManager)
-    {
-        _regionManager = regionManager;
-        
-        MenuItems = new ObservableCollection<MenuItem>
-        {
-            new MenuItem { Title = "Modbus TCP", Icon = "🔧", ViewName = "ModbusTcpView" },
-            new MenuItem { Title = "Modbus RTU", Icon = "🔧", ViewName = "ModbusRtuView" },
-            new MenuItem { Title = "西门子 S7", Icon = "🏭", ViewName = "SiemensView" },
-            new MenuItem { Title = "三菱 PLC", Icon = "🏭", ViewName = "MitsubishiView" },
-            new MenuItem { Title = "欧姆龙 PLC", Icon = "🏭", ViewName = "OmronView" },
-            new MenuItem { Title = "串口调试", Icon = "📡", ViewName = "SerialPortView" },
-            new MenuItem { Title = "Socket 调试", Icon = "S", ViewName = "SocketDebugView" }
-        };
-        
-        _timer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(1)
-        };
-        _timer.Tick += (s, e) => CurrentTime = DateTime.Now;
-        _timer.Start();
-        
-        SelectedMenuItem = MenuItems[0];
-    }
-    
+
     private void NavigateTo(string viewName)
     {
         _regionManager.RequestNavigate("ContentRegion", viewName);

@@ -43,6 +43,7 @@ public static class VktunIoTConnectorServiceCollectionExtensions
         services.TryAddSingleton<ICommunicationChannelFactory, CommunicationChannelFactory>();
         services.TryAddSingleton<IDeviceCommandExecutor, DeviceCommandExecutor>();
         services.TryAddSingleton<IModbusClient, ModbusClient>();
+        services.TryAddSingleton<IModbusSlaveServer, ModbusSlaveServer>();
         services.TryAddSingleton<ISessionManager, SessionManager>();
         services.TryAddSingleton<IDeviceManager>(serviceProvider =>
         {
