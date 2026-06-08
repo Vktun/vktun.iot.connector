@@ -66,8 +66,7 @@ public class ModbusTcpTest
             DisconnectFromPlc();
         }
 
-        Console.WriteLine("\n按任意键退出...");
-        Console.ReadKey();
+        Program.WaitForExit("\n按任意键退出...");
     }
 
     /// <summary>

@@ -129,10 +129,22 @@ cd demo/Vktun.IoT.Connector.DeviceMock
 dotnet run
 ```
 
+如果默认端口 `502` 或 `102` 需要管理员权限，建议开发时使用高端口：
+
+```bash
+dotnet run -- --modbus-port 1502 --s7-port 1102
+```
+
+配合控制台采集 Demo 验证 Modbus TCP：
+
+```bash
+dotnet run --project ../Vktun.IoT.Connector.Demo -- collector 127.0.0.1 1502
+```
+
 ### 3. 测试连接
 
-- **Modbus TCP**: 使用Modbus客户端工具连接到 `localhost:502`
-- **S7**: 使用S7客户端工具连接到 `localhost:102`
+- **Modbus TCP**: 使用Modbus客户端工具连接到 `localhost:502`，或连接到 `--modbus-port` 指定端口
+- **S7**: 使用S7客户端工具连接到 `localhost:102`，或连接到 `--s7-port` 指定端口
 
 ## 数据模拟类型
 
