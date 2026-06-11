@@ -258,7 +258,10 @@ public static class ConnectionSettingsValidator
         return communicationType is CommunicationType.Tcp
             or CommunicationType.Udp
             or CommunicationType.TcpOverUdp
-            or CommunicationType.UdpOverTcp;
+            or CommunicationType.UdpOverTcp
+            or CommunicationType.Can
+            or CommunicationType.FourG
+            or CommunicationType.NbIoT;
     }
 
     private static ConnectionValidationResult Valid(NormalizedConnectionSettings settings)

@@ -52,6 +52,19 @@ public class CommunicationChannelFactory : ICommunicationChannelFactory
                 device.LocalPort,
                 _configProvider,
                 _logger),
+            (CommunicationType.Can, _) => new CanChannel(
+                device.ConnectionMode,
+                device.LocalIpAddress,
+                device.LocalPort,
+                _configProvider,
+                _logger),
+            (CommunicationType.FourG or CommunicationType.NbIoT, _) => new WirelessIpChannel(
+                device.CommunicationType,
+                device.ConnectionMode,
+                device.LocalIpAddress,
+                device.LocalPort,
+                _configProvider,
+                _logger),
             (CommunicationType.Http, ConnectionMode.Client) => new HttpClientChannel(_configProvider, _logger, _httpClientFactory),
             (CommunicationType.Mqtt, ConnectionMode.Client) => CreateMqttChannel(device),
             (CommunicationType.Serial, _) => new SerialChannel(

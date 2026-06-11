@@ -9,15 +9,17 @@ Industrial device data acquisition SDK with a DI-based runtime facade, communica
 | Area | Status | Notes |
 | --- | --- | --- |
 | Facade + DI entry | Verified | `IIoTDataCollector`, `AddVktunIoTConnector`, `AddVktunHttpChannel`, and `AddVktunMqttChannel` have build/test coverage. |
-| TCP / UDP / Serial channels | Limited usable | Real send/receive chains are integrated, but real device validation is still required. |
-| HTTP / MQTT channels | Verified for SDK integration | Minimal documentation, DI registration, and tests are present; production still depends on environment health checks. |
+| TCP / UDP / tunnel channels | Verified loopback | TCP, UDP, `TcpOverUdp`, and `UdpOverTcp` have factory mappings and loopback send/receive coverage; real device validation is still required. |
+| Serial channel | Limited usable | Factory mapping exists, but the current driver is Windows-only and still needs hardware/OS validation. |
+| CAN / 4G / NB-IoT transports | Limited usable | Factory mappings, endpoint validation, and loopback send/receive tests are present. `CanChannel` preserves framed CAN payload boundaries over a TCP bridge; `FourG`/`NbIoT` use IP-backed wireless channels and still require modem/device validation. |
+| HTTP / MQTT channels | Verified for SDK integration | HTTP has injected-client request/response tests; MQTT has in-memory/local-broker messaging tests and DI coverage. Production still depends on environment health checks. |
 | Modbus RTU / TCP | Verified | Parser, packing, template compatibility, and regression tests are present. |
-| Custom protocol | Limited usable | JSON-driven parsing is available; field validation still depends on real sample frames. |
-| S7 | Limited usable | Use specialized command APIs rather than the generic `BuildRequest` stub entry. |
-| IEC104 | Limited usable | Parser entry exists, but command modeling remains limited for full ASDU control scenarios. |
-| OPC UA / BACnet / CANopen | Experimental | Present in code, currently routed through `ProtocolType.Custom`, and not production-ready. |
+| Custom protocol | Limited usable | JSON-driven parser coverage exists; device-specific field validation still depends on real sample frames. |
+| S7 | Limited usable | Parser and collect path use specialized read-command construction; generic command packing remains limited. |
+| IEC104 | Limited usable | Parser and interrogation command paths exist, but command modeling remains limited for full ASDU control scenarios. |
+| OPC UA / BACnet / CANopen | Experimental | Parsers are registered by explicit aliases with `ParserStatus.Experimental`; they share `ProtocolType.Custom` internally but are not the default `ProtocolType.Custom` parser. |
 | Azure / AWS cloud connectors | Opt-in only | Explicit DI registrations are available for targeted integration, but they are not part of the default `AddVktunIoTConnector` runtime path. |
-| DeviceMock | Development only | Suitable for development and regression, not a production gateway service. |
+| DeviceMock | Development only | Covers development/regression scenarios such as Modbus TCP and Siemens S7 mock paths; not a production gateway service. |
 
 ## Project Structure
 

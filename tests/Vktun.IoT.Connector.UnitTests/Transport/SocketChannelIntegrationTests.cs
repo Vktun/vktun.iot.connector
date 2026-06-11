@@ -426,6 +426,95 @@ public class SocketChannelIntegrationTests
     }
 
     [Fact]
+    public async Task CanClientChannel_ShouldSendAndReceiveFramedPayload()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var remotePort = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        await using var channel = new CanChannel(ConnectionMode.Client, string.Empty, 0, _configProvider, _logger);
+
+        var acceptedTask = listener.AcceptTcpClientAsync();
+        var device = new DeviceInfo
+        {
+            DeviceId = "can-client-device",
+            CommunicationType = CommunicationType.Can,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "127.0.0.1",
+            Port = remotePort
+        };
+
+        Assert.True(await channel.ConnectDeviceAsync(device));
+        using var accepted = await acceptedTask.WaitAsync(TimeSpan.FromSeconds(3));
+        await using var stream = accepted.GetStream();
+
+        var received = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DataReceived += (_, args) => received.TrySetResult(args.Data);
+
+        var frame = new byte[] { 0x12, 0x34, 0x08, 0x01, 0x02, 0x03, 0x04 };
+        Assert.Equal(frame.Length + 2, await channel.SendAsync(device.DeviceId, frame));
+
+        var lengthBuffer = new byte[2];
+        await ReadExactlyAsync(stream, lengthBuffer, CancellationToken.None);
+        var frameLength = (lengthBuffer[0] << 8) | lengthBuffer[1];
+        Assert.Equal(frame.Length, frameLength);
+
+        var requestBuffer = new byte[frameLength];
+        await ReadExactlyAsync(stream, requestBuffer, CancellationToken.None);
+        Assert.Equal(frame, requestBuffer);
+
+        var response = new byte[] { 0x12, 0x35, 0x02, 0x05, 0x06 };
+        await stream.WriteAsync(new byte[] { 0x00, (byte)response.Length });
+        await stream.WriteAsync(response);
+        await stream.FlushAsync();
+
+        var actual = await received.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal(response, actual);
+    }
+
+    [Theory]
+    [InlineData(CommunicationType.FourG)]
+    [InlineData(CommunicationType.NbIoT)]
+    public async Task WirelessIpClientChannel_ShouldSendAndReceive(CommunicationType communicationType)
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var remotePort = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        await using var channel = new WirelessIpChannel(communicationType, ConnectionMode.Client, string.Empty, 0, _configProvider, _logger);
+        var received = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DataReceived += (_, args) => received.TrySetResult(args.Data);
+
+        var acceptedTask = listener.AcceptTcpClientAsync();
+        var device = new DeviceInfo
+        {
+            DeviceId = $"{communicationType}-client-device",
+            CommunicationType = communicationType,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "127.0.0.1",
+            Port = remotePort
+        };
+
+        Assert.True(await channel.ConnectDeviceAsync(device));
+        using var accepted = await acceptedTask.WaitAsync(TimeSpan.FromSeconds(3));
+        await using var stream = accepted.GetStream();
+
+        var payload = Encoding.UTF8.GetBytes($"{communicationType}-out");
+        Assert.Equal(payload.Length, await channel.SendAsync(device.DeviceId, payload));
+
+        var readBuffer = new byte[64];
+        var read = await stream.ReadAsync(readBuffer);
+        Assert.Equal(payload, readBuffer.Take(read).ToArray());
+
+        var response = Encoding.UTF8.GetBytes($"{communicationType}-in");
+        await stream.WriteAsync(response);
+        await stream.FlushAsync();
+
+        var actual = await received.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal(response, actual);
+    }
+
+    [Fact]
     public async Task UdpServerChannel_ShouldBindOnFirstPacketAndSendBack()
     {
         var port = GetFreeUdpPort();

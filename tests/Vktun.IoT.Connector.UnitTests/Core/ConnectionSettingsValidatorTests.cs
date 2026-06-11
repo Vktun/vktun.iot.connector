@@ -103,5 +103,47 @@ public class ConnectionSettingsValidatorTests
         Assert.Equal(2502, device.LocalPort);
         Assert.Equal(0, device.Port);
     }
+
+    [Theory]
+    [InlineData(CommunicationType.Can)]
+    [InlineData(CommunicationType.FourG)]
+    [InlineData(CommunicationType.NbIoT)]
+    public void EndpointBackedTransports_ClientMode_ShouldRequireRemoteEndpoint(CommunicationType communicationType)
+    {
+        var result = ConnectionSettingsValidator.ValidateAndNormalize(
+            communicationType,
+            ConnectionMode.Client,
+            "127.0.0.1",
+            15000,
+            string.Empty,
+            0);
+
+        Assert.True(result.IsValid, result.ErrorMessage);
+        Assert.NotNull(result.Settings);
+        Assert.Equal(communicationType, result.Settings.CommunicationType);
+        Assert.Equal("127.0.0.1", result.Settings.RemoteIpAddressText);
+        Assert.Equal(15000, result.Settings.RemotePort);
+    }
+
+    [Theory]
+    [InlineData(CommunicationType.Can)]
+    [InlineData(CommunicationType.FourG)]
+    [InlineData(CommunicationType.NbIoT)]
+    public void EndpointBackedTransports_ServerMode_LegacyPort_ShouldNormalizeToLocalPort(CommunicationType communicationType)
+    {
+        var device = new DeviceInfo
+        {
+            DeviceId = $"{communicationType}-server",
+            CommunicationType = communicationType,
+            ConnectionMode = ConnectionMode.Server,
+            Port = 26000
+        };
+
+        var success = ConnectionSettingsValidator.TryNormalize(device, out var errorMessage);
+
+        Assert.True(success, errorMessage);
+        Assert.Equal(26000, device.LocalPort);
+        Assert.Equal(0, device.Port);
+    }
 }
 

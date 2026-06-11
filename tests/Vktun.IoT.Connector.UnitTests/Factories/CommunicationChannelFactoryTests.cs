@@ -134,6 +134,46 @@ public class CommunicationChannelFactoryTests
         Assert.Equal(ConnectionMode.Server, channel.ConnectionMode);
     }
 
+    [Fact]
+    public void CreateChannel_CanClient_ShouldCreateCanChannel()
+    {
+        var device = new DeviceInfo
+        {
+            DeviceId = "can-client",
+            CommunicationType = CommunicationType.Can,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "127.0.0.1",
+            Port = 15000
+        };
+
+        var channel = _factory.CreateChannel(device);
+
+        Assert.IsType<CanChannel>(channel);
+        Assert.Equal(CommunicationType.Can, channel.CommunicationType);
+        Assert.Equal(ConnectionMode.Client, channel.ConnectionMode);
+    }
+
+    [Theory]
+    [InlineData(CommunicationType.FourG)]
+    [InlineData(CommunicationType.NbIoT)]
+    public void CreateChannel_WirelessIpClient_ShouldCreateWirelessIpChannel(CommunicationType communicationType)
+    {
+        var device = new DeviceInfo
+        {
+            DeviceId = $"{communicationType}-client",
+            CommunicationType = communicationType,
+            ConnectionMode = ConnectionMode.Client,
+            IpAddress = "127.0.0.1",
+            Port = 15000
+        };
+
+        var channel = _factory.CreateChannel(device);
+
+        Assert.IsType<WirelessIpChannel>(channel);
+        Assert.Equal(communicationType, channel.CommunicationType);
+        Assert.Equal(ConnectionMode.Client, channel.ConnectionMode);
+    }
+
     private sealed class TestConfigurationProvider : IConfigurationProvider
     {
         private readonly SdkConfig _config = new();
