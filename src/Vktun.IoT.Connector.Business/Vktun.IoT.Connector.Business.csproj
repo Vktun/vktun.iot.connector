@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Business</PackageId>
-    <Version>0.0.5</Version>
+    <Version>0.0.6</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Business - 运行时编排层，包含 DeviceManager、SessionManager、HeartbeatManager、DataProvider、DeviceCommandExecutor 和 RetryPolicy 等能力。
 
@@ -32,7 +32,9 @@ AzureIoTHubConnector 和 AwsIoTConnector 当前作为独立辅助类存在，未
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Devices.Client" Version="1.42.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.5" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <PackageReference Include="MQTTnet" Version="4.3.7.1207" />
     <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
   </ItemGroup>
 

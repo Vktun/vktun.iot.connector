@@ -10,6 +10,7 @@ public class SessionManager : ISessionManager
     private readonly ConcurrentDictionary<string, DeviceSession> _sessionsByDevice;
     private readonly ConcurrentDictionary<string, DeviceSession> _sessionsById;
     private readonly ILogger _logger;
+    private readonly object _sessionLock = new();
 
     public int ActiveSessionCount => _sessionsByDevice.Count;
     public int TotalSessionCount => _sessionsById.Count;
@@ -37,8 +38,21 @@ public class SessionManager : ISessionManager
             CancellationTokenSource = new CancellationTokenSource()
         };
 
-        _sessionsByDevice[device.DeviceId] = session;
-        _sessionsById[session.SessionId] = session;
+        DeviceSession? previousSession;
+        lock (_sessionLock)
+        {
+            _sessionsByDevice.TryGetValue(device.DeviceId, out previousSession);
+            if (previousSession != null)
+            {
+                _sessionsById.TryRemove(previousSession.SessionId, out _);
+            }
+
+            _sessionsByDevice[device.DeviceId] = session;
+            _sessionsById[session.SessionId] = session;
+        }
+
+        previousSession?.CancellationTokenSource?.Cancel();
+        previousSession?.CancellationTokenSource?.Dispose();
 
         SessionCreated?.Invoke(this, new SessionCreatedEventArgs
         {
@@ -65,12 +79,22 @@ public class SessionManager : ISessionManager
 
     public Task<bool> RemoveSessionAsync(string deviceId)
     {
-        if (!_sessionsByDevice.TryRemove(deviceId, out var session))
+        DeviceSession? session;
+        lock (_sessionLock)
+        {
+            if (!_sessionsByDevice.TryRemove(deviceId, out session))
+            {
+                return Task.FromResult(false);
+            }
+
+            _sessionsById.TryRemove(session.SessionId, out _);
+        }
+
+        if (session == null)
         {
             return Task.FromResult(false);
         }
 
-        _sessionsById.TryRemove(session.SessionId, out _);
         session.CancellationTokenSource?.Cancel();
         session.CancellationTokenSource?.Dispose();
 

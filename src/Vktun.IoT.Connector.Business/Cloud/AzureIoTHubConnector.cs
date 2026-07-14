@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Collections.Concurrent;
 using Microsoft.Azure.Devices.Client;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
@@ -67,6 +68,7 @@ public class AzureIoTHubConnector : IAsyncDisposable
     private Timer? _heartbeatTimer;
     private DeviceTwinProperties _twinProperties = new();
     private DeviceClient? _deviceClient;
+    private readonly ConcurrentDictionary<string, PendingDirectMethod> _pendingDirectMethods = new();
 
     public event EventHandler<Dictionary<string, object>>? TwinDesiredPropertiesChanged;
     public event EventHandler<DirectMethodRequest>? DirectMethodReceived;
@@ -104,7 +106,10 @@ public class AzureIoTHubConnector : IAsyncDisposable
             if (_config.EnableTwinSync)
             {
                 await GetTwinAsync(cancellationToken);
+                await SetupTwinHandlerAsync(cancellationToken);
             }
+
+            await SetupCloudMessageHandlerAsync(cancellationToken);
 
             if (_config.EnableDirectMethods)
             {
@@ -116,6 +121,11 @@ public class AzureIoTHubConnector : IAsyncDisposable
         }
         catch (Exception ex)
         {
+            _heartbeatTimer?.Dispose();
+            _heartbeatTimer = null;
+            _deviceClient?.Dispose();
+            _deviceClient = null;
+            _isConnected = false;
             _logger.Error($"Failed to connect to Azure IoT Hub: {ex.Message}", ex);
             return false;
         }
@@ -181,7 +191,7 @@ public class AzureIoTHubConnector : IAsyncDisposable
 
         foreach (var point in data.DataItems)
         {
-            telemetry[point.PointName] = point.Value;
+            telemetry[point.PointName] = point.Value ?? string.Empty;
         }
 
         await SendTelemetryAsync(telemetry, cancellationToken);
@@ -251,15 +261,26 @@ public class AzureIoTHubConnector : IAsyncDisposable
     /// <summary>
     /// 响应直接方法
     /// </summary>
-    public async Task RespondToDirectMethodAsync(string methodName, int status, object? payload, CancellationToken cancellationToken = default)
+    public Task RespondToDirectMethodAsync(string methodName, int status, object? payload, CancellationToken cancellationToken = default)
     {
         if (!_isConnected || _deviceClient == null)
         {
             _logger.Warning("Not connected to Azure IoT Hub");
-            return;
+            return Task.CompletedTask;
         }
 
-        _logger.Debug($"Direct method response prepared for {methodName} with status {status}");
+        var pending = _pendingDirectMethods
+            .OrderBy(pair => pair.Value.CreatedAt)
+            .FirstOrDefault(pair => pair.Value.MethodName.Equals(methodName, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrEmpty(pending.Key))
+        {
+            _logger.Warning($"No pending direct method request found for {methodName}.");
+            return Task.CompletedTask;
+        }
+
+        var responsePayload = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+        pending.Value.Response.TrySetResult(new MethodResponse(responsePayload, status));
+        return Task.CompletedTask;
     }
 
     public async Task SetupDirectMethodHandlerAsync(CancellationToken cancellationToken = default)
@@ -272,19 +293,71 @@ public class AzureIoTHubConnector : IAsyncDisposable
             {
                 _logger.Info($"Direct method received: {methodRequest.Name}");
 
+                var requestId = Guid.NewGuid().ToString("N");
+                var pending = new PendingDirectMethod(methodRequest.Name);
+                _pendingDirectMethods[requestId] = pending;
                 DirectMethodReceived?.Invoke(this, new DirectMethodRequest
                 {
                     MethodName = methodRequest.Name,
-                    RequestId = Guid.NewGuid().ToString(),
+                    RequestId = requestId,
                     Payload = methodRequest.DataAsJson,
                     Timestamp = DateTime.UtcNow
                 });
 
-                var resultData = methodRequest.DataAsJson ?? "{}";
-                return await Task.FromResult(new MethodResponse(Encoding.UTF8.GetBytes(resultData), 200));
+                try
+                {
+                    using var responseTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    return await pending.Response.Task.WaitAsync(responseTimeout.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return new MethodResponse(Encoding.UTF8.GetBytes("{\"error\":\"Direct method response timed out.\"}"), 504);
+                }
+                finally
+                {
+                    _pendingDirectMethods.TryRemove(requestId, out _);
+                }
             },
             null,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SetupTwinHandlerAsync(CancellationToken cancellationToken)
+    {
+        if (_deviceClient == null)
+        {
+            return;
+        }
+
+        await _deviceClient.SetDesiredPropertyUpdateCallbackAsync((desired, _) =>
+        {
+            var properties = JsonSerializer.Deserialize<Dictionary<string, object>>(desired.ToJson()) ?? new();
+            _twinProperties.Desired = properties;
+            TwinDesiredPropertiesChanged?.Invoke(this, properties);
+            return Task.CompletedTask;
+        }, null, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SetupCloudMessageHandlerAsync(CancellationToken cancellationToken)
+    {
+        if (_deviceClient == null)
+        {
+            return;
+        }
+
+        await _deviceClient.SetReceiveMessageHandlerAsync(async (message, _) =>
+        {
+            var cloudMessage = new CloudToDeviceMessage
+            {
+                MessageId = message.MessageId ?? string.Empty,
+                ContentType = message.ContentType ?? string.Empty,
+                Body = message.GetBytes(),
+                Properties = message.Properties.ToDictionary(pair => pair.Key, pair => pair.Value),
+                Timestamp = DateTime.UtcNow
+            };
+            CloudMessageReceived?.Invoke(this, cloudMessage);
+            await _deviceClient.CompleteAsync(message).ConfigureAwait(false);
+        }, null, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -312,6 +385,19 @@ public class AzureIoTHubConnector : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await DisconnectAsync();
+    }
+
+    private sealed class PendingDirectMethod
+    {
+        public PendingDirectMethod(string methodName)
+        {
+            MethodName = methodName;
+        }
+
+        public string MethodName { get; }
+        public DateTime CreatedAt { get; } = DateTime.UtcNow;
+        public TaskCompletionSource<MethodResponse> Response { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }
 

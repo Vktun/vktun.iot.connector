@@ -2,6 +2,9 @@ using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using MQTTnet;
+using MQTTnet.Client;
+using MQTTnet.Protocol;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
 
@@ -94,8 +97,8 @@ public class AwsIoTConnector : IAsyncDisposable
     private bool _isConnected;
     private DeviceShadowState _shadowState = new();
     private Timer? _syncTimer;
-    private System.Net.Sockets.TcpClient? _tcpClient;
-    private System.Net.Security.SslStream? _sslStream;
+    private IMqttClient? _mqttClient;
+    private X509Certificate2? _clientCertificate;
     private string _currentEndpoint = string.Empty;
 
     public event EventHandler<Dictionary<string, object>>? ShadowDeltaReceived;
@@ -122,31 +125,32 @@ public class AwsIoTConnector : IAsyncDisposable
             _currentEndpoint = endpoint;
             _logger.Info($"Connecting to AWS IoT: {endpoint}, Thing: {_config.ThingName}");
 
-            _tcpClient = new System.Net.Sockets.TcpClient();
-            await _tcpClient.ConnectAsync(endpoint, _config.Port, cancellationToken).ConfigureAwait(false);
-
-            var sslOptions = new System.Net.Security.SslClientAuthenticationOptions
+            if (string.IsNullOrWhiteSpace(endpoint) ||
+                string.IsNullOrWhiteSpace(_config.ThingName) ||
+                string.IsNullOrWhiteSpace(_config.CertificatePath) ||
+                string.IsNullOrWhiteSpace(_config.PrivateKeyPath))
             {
-                TargetHost = endpoint,
-                EnabledSslProtocols = SslProtocols.Tls12,
-                RemoteCertificateValidationCallback = ValidateServerCertificate
-            };
-
-            if (!string.IsNullOrEmpty(_config.CertificatePath))
-            {
-                try
-                {
-                    var certificate = new X509Certificate2(_config.CertificatePath);
-                    sslOptions.ClientCertificates = new X509CertificateCollection { certificate };
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warning($"Failed to load certificate: {ex.Message}");
-                }
+                _logger.Error("AWS IoT requires an endpoint, thing name, client certificate, and private key.");
+                return false;
             }
 
-            _sslStream = new System.Net.Security.SslStream(_tcpClient.GetStream(), false);
-            await _sslStream.AuthenticateAsClientAsync(sslOptions, cancellationToken).ConfigureAwait(false);
+            _clientCertificate = X509Certificate2.CreateFromPemFile(_config.CertificatePath, _config.PrivateKeyPath);
+            _mqttClient = new MqttFactory().CreateMqttClient();
+            _mqttClient.ApplicationMessageReceivedAsync += OnApplicationMessageReceivedAsync;
+
+            var options = new MqttClientOptionsBuilder()
+                .WithClientId(_config.ThingName)
+                .WithTcpServer(endpoint, _config.Port)
+                .WithTlsOptions(tls =>
+                {
+                    tls.UseTls();
+                    tls.WithClientCertificates(new X509Certificate2Collection(_clientCertificate));
+                    tls.WithCertificateValidationHandler(args =>
+                        ValidateServerCertificate(args.Certificate, args.Chain, args.SslPolicyErrors));
+                })
+                .Build();
+
+            await _mqttClient.ConnectAsync(options, cancellationToken).ConfigureAwait(false);
 
             _isConnected = true;
 
@@ -158,6 +162,7 @@ public class AwsIoTConnector : IAsyncDisposable
         }
         catch (Exception ex)
         {
+            await DisconnectAsync().ConfigureAwait(false);
             _logger.Error($"Failed to connect to AWS IoT: {ex.Message}", ex);
             return false;
         }
@@ -171,27 +176,29 @@ public class AwsIoTConnector : IAsyncDisposable
         _syncTimer?.Dispose();
         _syncTimer = null;
 
-        try
+        if (_mqttClient != null)
         {
-            _sslStream?.Close();
-            _sslStream?.Dispose();
-            _sslStream = null;
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning($"Error closing SSL stream: {ex.Message}");
+            _mqttClient.ApplicationMessageReceivedAsync -= OnApplicationMessageReceivedAsync;
+            try
+            {
+                if (_mqttClient.IsConnected)
+                {
+                    await _mqttClient.DisconnectAsync().ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Failed to disconnect AWS MQTT client cleanly: {ex.Message}");
+            }
+            finally
+            {
+                _mqttClient.Dispose();
+                _mqttClient = null;
+            }
         }
 
-        try
-        {
-            _tcpClient?.Close();
-            _tcpClient?.Dispose();
-            _tcpClient = null;
-        }
-        catch (Exception ex)
-        {
-            _logger.Warning($"Error closing TCP client: {ex.Message}");
-        }
+        _clientCertificate?.Dispose();
+        _clientCertificate = null;
 
         _isConnected = false;
 
@@ -204,7 +211,7 @@ public class AwsIoTConnector : IAsyncDisposable
     /// </summary>
     public async Task PublishTelemetryAsync(string topic, Dictionary<string, object> data, CancellationToken cancellationToken = default)
     {
-        if (!_isConnected || _sslStream == null)
+        if (!_isConnected || _mqttClient is not { IsConnected: true })
         {
             _logger.Warning("Not connected to AWS IoT");
             return;
@@ -225,9 +232,7 @@ public class AwsIoTConnector : IAsyncDisposable
 
             _logger.Debug($"Publishing to {fullTopic}: {payload}");
 
-            var messageBytes = Encoding.UTF8.GetBytes(payload);
-            await _sslStream.WriteAsync(messageBytes, 0, messageBytes.Length, cancellationToken).ConfigureAwait(false);
-            await _sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await PublishAsync(fullTopic, payload, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -243,7 +248,7 @@ public class AwsIoTConnector : IAsyncDisposable
         var telemetry = new Dictionary<string, object>();
         foreach (var point in data.DataItems)
         {
-            telemetry[point.PointName] = point.Value;
+            telemetry[point.PointName] = point.Value ?? string.Empty;
         }
 
         await PublishTelemetryAsync("data", telemetry, cancellationToken);
@@ -254,7 +259,7 @@ public class AwsIoTConnector : IAsyncDisposable
     /// </summary>
     public async Task<DeviceShadowState> GetShadowAsync(CancellationToken cancellationToken = default)
     {
-        if (!_isConnected || _sslStream == null)
+        if (!_isConnected || _mqttClient is not { IsConnected: true })
         {
             _logger.Warning("Not connected to AWS IoT");
             return _shadowState;
@@ -264,14 +269,7 @@ public class AwsIoTConnector : IAsyncDisposable
         {
             _logger.Debug("Getting device shadow...");
 
-            var requestPayload = JsonSerializer.Serialize(new
-            {
-                action = "get",
-                thingName = _config.ThingName
-            });
-            var requestBytes = Encoding.UTF8.GetBytes(requestPayload);
-            await _sslStream.WriteAsync(requestBytes, 0, requestBytes.Length, cancellationToken).ConfigureAwait(false);
-            await _sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await PublishAsync($"$aws/things/{_config.ThingName}/shadow/get", "{}", cancellationToken).ConfigureAwait(false);
 
             return _shadowState;
         }
@@ -287,7 +285,7 @@ public class AwsIoTConnector : IAsyncDisposable
     /// </summary>
     public async Task UpdateShadowReportedAsync(Dictionary<string, object> properties, CancellationToken cancellationToken = default)
     {
-        if (!_isConnected || _sslStream == null)
+        if (!_isConnected || _mqttClient is not { IsConnected: true })
         {
             _logger.Warning("Not connected to AWS IoT");
             return;
@@ -310,9 +308,7 @@ public class AwsIoTConnector : IAsyncDisposable
 
             _logger.Debug($"Updating shadow reported: {payload}");
 
-            var payloadBytes = Encoding.UTF8.GetBytes(payload);
-            await _sslStream.WriteAsync(payloadBytes, 0, payloadBytes.Length, cancellationToken).ConfigureAwait(false);
-            await _sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await PublishAsync($"$aws/things/{_config.ThingName}/shadow/update", payload, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -325,7 +321,7 @@ public class AwsIoTConnector : IAsyncDisposable
     /// </summary>
     public async Task TriggerLambdaAsync(string functionName, object payload, CancellationToken cancellationToken = default)
     {
-        if (!_isConnected || !_config.EnableGreengrass || _sslStream == null)
+        if (!_isConnected || !_config.EnableGreengrass || _mqttClient is not { IsConnected: true })
         {
             _logger.Warning("Not connected to Greengrass or Greengrass not enabled");
             return;
@@ -333,7 +329,7 @@ public class AwsIoTConnector : IAsyncDisposable
 
         try
         {
-            var topic = $"lambda/{functionName}/invoke";
+            var topic = $"$aws/things/{_config.ThingName}/greengrass/lambda/{functionName}/invoke";
             var message = JsonSerializer.Serialize(new
             {
                 requestId = Guid.NewGuid().ToString(),
@@ -343,9 +339,7 @@ public class AwsIoTConnector : IAsyncDisposable
 
             _logger.Debug($"Triggering Lambda {functionName}: {message}");
 
-            var messageBytes = Encoding.UTF8.GetBytes(message);
-            await _sslStream.WriteAsync(messageBytes, 0, messageBytes.Length, cancellationToken).ConfigureAwait(false);
-            await _sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await PublishAsync(topic, message, cancellationToken).ConfigureAwait(false);
 
             LambdaTriggered?.Invoke(this, functionName);
         }
@@ -366,16 +360,16 @@ public class AwsIoTConnector : IAsyncDisposable
 
         _logger.Debug($"Subscribing to shadow topics...");
 
-        if (_sslStream != null && _isConnected)
+        if (_mqttClient is { IsConnected: true })
         {
-            var subscribeMessage = JsonSerializer.Serialize(new
-            {
-                action = "subscribe",
-                topics = new[] { acceptedTopic, rejectedTopic, deltaTopic }
-            });
-            var subscribeBytes = Encoding.UTF8.GetBytes(subscribeMessage);
-            await _sslStream.WriteAsync(subscribeBytes, 0, subscribeBytes.Length, cancellationToken).ConfigureAwait(false);
-            await _sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            var getAcceptedTopic = $"$aws/things/{_config.ThingName}/shadow/get/accepted";
+            var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
+                .WithTopicFilter(acceptedTopic, MqttQualityOfServiceLevel.AtLeastOnce)
+                .WithTopicFilter(rejectedTopic, MqttQualityOfServiceLevel.AtLeastOnce)
+                .WithTopicFilter(deltaTopic, MqttQualityOfServiceLevel.AtLeastOnce)
+                .WithTopicFilter(getAcceptedTopic, MqttQualityOfServiceLevel.AtLeastOnce)
+                .Build();
+            await _mqttClient.SubscribeAsync(subscribeOptions, cancellationToken).ConfigureAwait(false);
         }
 
         await Task.CompletedTask;
@@ -422,7 +416,50 @@ public class AwsIoTConnector : IAsyncDisposable
         await DisconnectAsync();
     }
 
-    private bool ValidateServerCertificate(object sender, X509Certificate? certificate, X509Chain? chain, System.Net.Security.SslPolicyErrors sslPolicyErrors)
+    private async Task PublishAsync(string topic, string payload, CancellationToken cancellationToken)
+    {
+        if (_mqttClient is not { IsConnected: true })
+        {
+            throw new InvalidOperationException("AWS MQTT client is not connected.");
+        }
+
+        var message = new MqttApplicationMessageBuilder()
+            .WithTopic(topic)
+            .WithPayload(payload)
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+            .Build();
+        await _mqttClient.PublishAsync(message, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task OnApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs args)
+    {
+        var topic = args.ApplicationMessage.Topic;
+        var payload = Encoding.UTF8.GetString(args.ApplicationMessage.PayloadSegment.ToArray());
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            if (topic.EndsWith("/delta", StringComparison.OrdinalIgnoreCase) &&
+                document.RootElement.TryGetProperty("state", out var deltaState))
+            {
+                var delta = JsonSerializer.Deserialize<Dictionary<string, object>>(deltaState.GetRawText()) ?? new();
+                HandleShadowDelta(delta);
+            }
+            else if (document.RootElement.TryGetProperty("state", out var state))
+            {
+                var shadow = JsonSerializer.Deserialize<DeviceShadowState>(state.GetRawText()) ?? new DeviceShadowState();
+                _shadowState = shadow;
+                ShadowUpdated?.Invoke(this, shadow);
+            }
+        }
+        catch (JsonException ex)
+        {
+            _logger.Warning($"Failed to parse AWS IoT message from {topic}: {ex.Message}");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private bool ValidateServerCertificate(X509Certificate? certificate, X509Chain? chain, System.Net.Security.SslPolicyErrors sslPolicyErrors)
     {
         if (certificate == null)
         {
@@ -440,7 +477,7 @@ public class AwsIoTConnector : IAsyncDisposable
             try
             {
                 chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-                chain.ChainPolicy.CustomTrustStore.Add(new X509Certificate2(_config.RootCAPath));
+                chain.ChainPolicy.CustomTrustStore.Add(X509CertificateLoader.LoadCertificateFromFile(_config.RootCAPath));
                 chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
 
                 if (chain.Build(new X509Certificate2(certificate)))

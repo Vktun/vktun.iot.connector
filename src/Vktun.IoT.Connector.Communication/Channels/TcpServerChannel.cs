@@ -145,7 +145,7 @@ public class TcpServerChannel : CommunicationChannelBase
         await sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var bytesSent = await connection.Socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+            var bytesSent = await SendAllAsync(connection.Socket, data, cancellationToken).ConfigureAwait(false);
             connection.AddBytesSent(bytesSent);
             connection.LastActiveTime = DateTime.Now;
             OnDataSent(deviceId, data.ToArray(), bytesSent);
@@ -226,6 +226,11 @@ public class TcpServerChannel : CommunicationChannelBase
 
     public override Task DisconnectDeviceAsync(string deviceId)
     {
+        return DisconnectDeviceCoreAsync(deviceId, waitForReceiveLoop: true, "Disconnected.");
+    }
+
+    private async Task DisconnectDeviceCoreAsync(string deviceId, bool waitForReceiveLoop, string reason)
+    {
         if (_connections.TryRemove(deviceId, out var connection))
         {
             try
@@ -243,11 +248,11 @@ public class TcpServerChannel : CommunicationChannelBase
 
             connection.CancellationTokenSource?.Cancel();
 
-            if (_receiveLoopTasks.TryRemove(deviceId, out var receiveLoopTask))
+            if (_receiveLoopTasks.TryRemove(deviceId, out var receiveLoopTask) && waitForReceiveLoop)
             {
                 try
                 {
-                    receiveLoopTask.GetAwaiter().GetResult();
+                    await receiveLoopTask.ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -265,11 +270,9 @@ public class TcpServerChannel : CommunicationChannelBase
                 sendLock.Dispose();
             }
 
-            OnDeviceDisconnected(deviceId, "Disconnected.");
+            OnDeviceDisconnected(deviceId, reason);
             _logger.Info($"TCP device disconnected: {deviceId}");
         }
-
-        return Task.CompletedTask;
     }
 
     private void EnsureAcceptLoopStarted()
@@ -375,7 +378,7 @@ public class TcpServerChannel : CommunicationChannelBase
 
                 if (bytesRead == 0)
                 {
-                    await DisconnectDeviceAsync(connection.DeviceId).ConfigureAwait(false);
+                    await DisconnectDeviceCoreAsync(connection.DeviceId, waitForReceiveLoop: false, "Remote disconnected.").ConfigureAwait(false);
                     break;
                 }
 
@@ -393,10 +396,27 @@ public class TcpServerChannel : CommunicationChannelBase
             catch (Exception ex)
             {
                 OnErrorOccurred(connection.DeviceId, "Failed to receive TCP data.", ex);
-                await DisconnectDeviceAsync(connection.DeviceId).ConfigureAwait(false);
+                await DisconnectDeviceCoreAsync(connection.DeviceId, waitForReceiveLoop: false, "Receive failed.").ConfigureAwait(false);
                 break;
             }
         }
+    }
+
+    private static async Task<int> SendAllAsync(Socket socket, ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
+    {
+        var totalSent = 0;
+        while (totalSent < data.Length)
+        {
+            var sent = await socket.SendAsync(data[totalSent..], SocketFlags.None, cancellationToken).ConfigureAwait(false);
+            if (sent == 0)
+            {
+                throw new IOException("TCP socket closed before the full payload was sent.");
+            }
+
+            totalSent += sent;
+        }
+
+        return totalSent;
     }
 
     private bool IsExpectedRemoteAddress(IPEndPoint? remoteEndPoint)

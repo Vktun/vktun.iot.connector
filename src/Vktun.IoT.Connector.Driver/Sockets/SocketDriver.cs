@@ -134,7 +134,19 @@ public class TcpSocketDriver : ISocketDriver
 
         try
         {
-            return await socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+            var totalSent = 0;
+            while (totalSent < data.Length)
+            {
+                var sent = await socket.SendAsync(data[totalSent..], SocketFlags.None, cancellationToken).ConfigureAwait(false);
+                if (sent == 0)
+                {
+                    throw new IOException("TCP socket closed before the full payload was sent.");
+                }
+
+                totalSent += sent;
+            }
+
+            return totalSent;
         }
         catch (OperationCanceledException)
         {

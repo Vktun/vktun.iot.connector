@@ -2,6 +2,7 @@ using System.Text.Json;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
+using Vktun.IoT.Connector.Core.Utils;
 
 namespace Vktun.IoT.Connector.Protocol.Parsers;
 
@@ -212,55 +213,17 @@ public class ModbusTcpParser : IProtocolParser
 
     private static object ExtractRegister(byte[] data, int byteIndex, DataType dataType, ModbusConfig config)
     {
-        var byteCount = GetByteCount(dataType);
+        var byteCount = ModbusValueConverter.GetByteCount(dataType);
         if (byteIndex + byteCount > data.Length)
         {
             throw new ArgumentException($"Not enough data. Need {byteCount} bytes, actual {data.Length - byteIndex} bytes.");
         }
 
-        var bytes = new byte[byteCount];
-        Array.Copy(data, byteIndex, bytes, 0, byteCount);
-
-        if (config.ByteOrder == ByteOrder.BigEndian)
-        {
-            if (byteCount == 2)
-            {
-                Array.Reverse(bytes);
-            }
-            else if (byteCount == 4)
-            {
-                if (config.WordOrder == WordOrder.HighWordFirst)
-                {
-                    Array.Reverse(bytes);
-                }
-                else
-                {
-                    bytes = new[] { bytes[2], bytes[3], bytes[0], bytes[1] };
-                }
-            }
-        }
-
-        return dataType switch
-        {
-            DataType.UInt16 => BitConverter.ToUInt16(bytes, 0),
-            DataType.Int16 => BitConverter.ToInt16(bytes, 0),
-            DataType.UInt32 => BitConverter.ToUInt32(bytes, 0),
-            DataType.Int32 => BitConverter.ToInt32(bytes, 0),
-            DataType.Float => BitConverter.ToSingle(bytes, 0),
-            _ => BitConverter.ToUInt16(bytes, 0)
-        };
-    }
-
-    private static int GetByteCount(DataType dataType)
-    {
-        return dataType switch
-        {
-            DataType.UInt8 or DataType.Int8 => 1,
-            DataType.UInt16 or DataType.Int16 => 2,
-            DataType.UInt32 or DataType.Int32 or DataType.Float => 4,
-            DataType.UInt64 or DataType.Int64 or DataType.Double => 8,
-            _ => 2
-        };
+        return ModbusValueConverter.DecodeRegisterValue(
+            data.AsSpan(byteIndex, byteCount),
+            dataType,
+            config.ByteOrder,
+            config.WordOrder);
     }
 
     private static double ConvertValue(object value, double ratio, double offset)

@@ -7,6 +7,7 @@ using System.Security.Cryptography.X509Certificates;
 using Vktun.IoT.Connector.Core.Enums;
 using Vktun.IoT.Connector.Core.Interfaces;
 using Vktun.IoT.Connector.Core.Models;
+using Vktun.IoT.Connector.Core.Utils;
 
 namespace Vktun.IoT.Connector.Communication.Channels;
 
@@ -71,12 +72,25 @@ public class SecureTcpChannel : CommunicationChannelBase
                 return true;
             }
 
+            var validation = ConnectionSettingsValidator.ValidateAndNormalize(device);
+            if (!validation.IsValid || validation.Settings?.RemoteAddress == null)
+            {
+                OnErrorOccurred(deviceId, validation.ErrorMessage);
+                return false;
+            }
+
+            var settings = validation.Settings;
             var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
             socket.NoDelay = true;
             socket.ReceiveBufferSize = 8192;
             socket.SendBufferSize = 8192;
 
-            var endPoint = new IPEndPoint(IPAddress.Parse(device.IpAddress), device.Port);
+            if (settings.LocalPort > 0 || !settings.LocalAddress.Equals(IPAddress.Any))
+            {
+                socket.Bind(new IPEndPoint(settings.LocalAddress, settings.LocalPort));
+            }
+
+            var endPoint = new IPEndPoint(settings.RemoteAddress, settings.RemotePort);
             await socket.ConnectAsync(endPoint, cancellationToken).ConfigureAwait(false);
 
             var networkStream = new NetworkStream(socket, true);
@@ -84,14 +98,16 @@ public class SecureTcpChannel : CommunicationChannelBase
 
             if (_tlsConfig != null && _tlsConfig.Enabled)
             {
-                stream = await PerformTlsHandshakeAsync(networkStream, device.IpAddress, cancellationToken).ConfigureAwait(false);
-                if (stream == null)
+                var authenticatedStream = await PerformTlsHandshakeAsync(networkStream, device.IpAddress, cancellationToken).ConfigureAwait(false);
+                if (authenticatedStream == null)
                 {
                     _logger.Error($"TLS handshake failed for device {deviceId}");
                     networkStream.Dispose();
                     socket.Dispose();
                     return false;
                 }
+
+                stream = authenticatedStream;
             }
 
             _clientSocket?.Dispose();
@@ -137,20 +153,25 @@ public class SecureTcpChannel : CommunicationChannelBase
 
     public override Task DisconnectDeviceAsync(string deviceId)
     {
+        return DisconnectDeviceCoreAsync(deviceId, waitForReceiveLoop: true, "Disconnected by request");
+    }
+
+    private async Task DisconnectDeviceCoreAsync(string deviceId, bool waitForReceiveLoop, string reason)
+    {
         if (!_connections.TryRemove(deviceId, out var connection))
         {
-            return Task.CompletedTask;
+            return;
         }
 
         try
         {
             connection.CancellationTokenSource?.Cancel();
 
-            if (_receiveLoopTasks.TryRemove(deviceId, out var receiveLoopTask))
+            if (_receiveLoopTasks.TryRemove(deviceId, out var receiveLoopTask) && waitForReceiveLoop)
             {
                 try
                 {
-                    receiveLoopTask.GetAwaiter().GetResult();
+                    await receiveLoopTask.ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -171,7 +192,7 @@ public class SecureTcpChannel : CommunicationChannelBase
             connection.Socket?.Shutdown(SocketShutdown.Both);
             connection.Socket?.Dispose();
 
-            OnDeviceDisconnected(deviceId, "Disconnected by request");
+            OnDeviceDisconnected(deviceId, reason);
             _logger.Info($"Device {deviceId} disconnected");
         }
         catch (Exception ex)
@@ -179,46 +200,11 @@ public class SecureTcpChannel : CommunicationChannelBase
             _logger.Error($"Error disconnecting device {deviceId}: {ex.Message}", ex);
         }
 
-        return Task.CompletedTask;
     }
 
-    public override async Task<int> SendAsync(string deviceId, byte[] data, CancellationToken cancellationToken = default)
+    public override Task<int> SendAsync(string deviceId, byte[] data, CancellationToken cancellationToken = default)
     {
-        if (!_connections.TryGetValue(deviceId, out var connection))
-        {
-            _logger.Warning($"Device {deviceId} is not connected");
-            return 0;
-        }
-
-        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (_sslStreams.TryGetValue(deviceId, out var sslStream) && sslStream != null)
-            {
-                await sslStream.WriteAsync(data, 0, data.Length, cancellationToken).ConfigureAwait(false);
-                await sslStream.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else if (connection.Socket != null)
-            {
-                await connection.Socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
-            }
-
-            connection.AddBytesSent(data.Length);
-            connection.LastActiveTime = DateTime.UtcNow;
-
-            _logger.Debug($"Sent {data.Length} bytes to device {deviceId}");
-            return data.Length;
-        }
-        catch (Exception ex)
-        {
-            _logger.Error($"Error sending data to device {deviceId}: {ex.Message}", ex);
-            OnErrorOccurred(deviceId, "Send failed", ex);
-            return 0;
-        }
-        finally
-        {
-            _sendLock.Release();
-        }
+        return SendAsync(deviceId, new ReadOnlyMemory<byte>(data), cancellationToken);
     }
 
     public override async Task<int> SendAsync(string deviceId, ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
@@ -239,7 +225,7 @@ public class SecureTcpChannel : CommunicationChannelBase
             }
             else if (connection.Socket != null)
             {
-                await connection.Socket.SendAsync(data, SocketFlags.None, cancellationToken).ConfigureAwait(false);
+                await SendAllAsync(connection.Socket, data, cancellationToken).ConfigureAwait(false);
             }
 
             connection.AddBytesSent(data.Length);
@@ -272,6 +258,7 @@ public class SecureTcpChannel : CommunicationChannelBase
     private async Task ReceiveLoopAsync(string deviceId, CancellationToken cancellationToken)
     {
         var buffer = new byte[8192];
+        var remoteDisconnected = false;
 
         while (!cancellationToken.IsCancellationRequested && _isConnected)
         {
@@ -295,6 +282,7 @@ public class SecureTcpChannel : CommunicationChannelBase
                 if (bytesRead == 0)
                 {
                     _logger.Debug($"Secure TCP remote endpoint closed the connection for device {deviceId}.");
+                    remoteDisconnected = true;
                     break;
                 }
 
@@ -315,8 +303,14 @@ public class SecureTcpChannel : CommunicationChannelBase
             catch (Exception ex)
             {
                 OnErrorOccurred(deviceId, "Failed to receive secure TCP data.", ex);
+                remoteDisconnected = true;
                 break;
             }
+        }
+
+        if (remoteDisconnected && !cancellationToken.IsCancellationRequested)
+        {
+            await DisconnectDeviceCoreAsync(deviceId, waitForReceiveLoop: false, "Remote disconnected.").ConfigureAwait(false);
         }
     }
 
@@ -348,7 +342,10 @@ public class SecureTcpChannel : CommunicationChannelBase
 
             if (_tlsConfig?.RequireClientCertificate == true && !string.IsNullOrEmpty(_tlsConfig.CertificatePath))
             {
-                var clientCert = new X509Certificate2(_tlsConfig.CertificatePath, _tlsConfig.CertificatePassword);
+                var clientCert = X509CertificateLoader.LoadPkcs12FromFile(
+                    _tlsConfig.CertificatePath,
+                    _tlsConfig.CertificatePassword,
+                    X509KeyStorageFlags.DefaultKeySet);
                 clientCertificates.Add(clientCert);
                 _clientCertificates[targetHost] = clientCert;
             }
@@ -391,6 +388,23 @@ public class SecureTcpChannel : CommunicationChannelBase
         }
 
         return false;
+    }
+
+    private static async Task<int> SendAllAsync(Socket socket, ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
+    {
+        var totalSent = 0;
+        while (totalSent < data.Length)
+        {
+            var sent = await socket.SendAsync(data[totalSent..], SocketFlags.None, cancellationToken).ConfigureAwait(false);
+            if (sent == 0)
+            {
+                throw new IOException("Secure TCP socket closed before the full payload was sent.");
+            }
+
+            totalSent += sent;
+        }
+
+        return totalSent;
     }
 
     public override async ValueTask DisposeAsync()

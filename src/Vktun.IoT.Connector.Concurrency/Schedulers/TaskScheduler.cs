@@ -116,7 +116,6 @@ public class TaskScheduler : ITaskScheduler
 
         if (!_taskQueue.TryEnqueue(taskItem))
         {
-            _taskResults.TryRemove(taskItem.TaskId, out _);
             completionSource.TrySetResult(new CommandResult
             {
                 CommandId = taskItem.TaskId,
@@ -132,7 +131,9 @@ public class TaskScheduler : ITaskScheduler
     {
         if (_taskResults.TryGetValue(taskId, out var completionSource))
         {
-            return await completionSource.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var result = await completionSource.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            _taskResults.TryRemove(taskId, out _);
+            return result;
         }
 
         return new CommandResult
@@ -197,7 +198,7 @@ public class TaskScheduler : ITaskScheduler
         try
         {
             var result = await ExecuteWithRetryAsync(taskItem, cancellationToken).ConfigureAwait(false);
-            if (_taskResults.TryRemove(taskItem.TaskId, out var completionSource))
+            if (_taskResults.TryGetValue(taskItem.TaskId, out var completionSource))
             {
                 completionSource.TrySetResult(result);
             }
@@ -213,7 +214,7 @@ public class TaskScheduler : ITaskScheduler
         }
         catch (Exception ex)
         {
-            if (_taskResults.TryRemove(taskItem.TaskId, out var completionSource))
+            if (_taskResults.TryGetValue(taskItem.TaskId, out var completionSource))
             {
                 completionSource.TrySetResult(new CommandResult
                 {

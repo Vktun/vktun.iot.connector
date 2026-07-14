@@ -323,10 +323,23 @@ public class JsonConfigurationProvider : IConfigurationProvider
         var changed = new SemaphoreSlim(0, 1);
         var changedFiles = new ConcurrentBag<string>();
 
-        watcher.Changed += (_, e) => { changedFiles.Add(e.FullPath); changed.Release(); };
-        watcher.Created += (_, e) => { changedFiles.Add(e.FullPath); changed.Release(); };
-        watcher.Deleted += (_, e) => { changedFiles.Add(e.FullPath); changed.Release(); };
-        watcher.Renamed += (_, e) => { changedFiles.Add(e.OldFullPath); changed.Release(); };
+        void QueueChange(string path)
+        {
+            changedFiles.Add(path);
+            try
+            {
+                changed.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // A pending notification already covers this change.
+            }
+        }
+
+        watcher.Changed += (_, e) => QueueChange(e.FullPath);
+        watcher.Created += (_, e) => QueueChange(e.FullPath);
+        watcher.Deleted += (_, e) => QueueChange(e.FullPath);
+        watcher.Renamed += (_, e) => QueueChange(e.OldFullPath);
 
         watcher.EnableRaisingEvents = true;
 

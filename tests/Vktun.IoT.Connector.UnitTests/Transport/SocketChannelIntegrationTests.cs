@@ -210,6 +210,37 @@ public class SocketChannelIntegrationTests
     }
 
     [Fact]
+    public async Task TcpServerChannel_WhenRemoteDisconnects_ShouldRaiseDisconnectedWithoutBlocking()
+    {
+        var port = GetFreeTcpPort();
+        await using var channel = new TcpServerChannel(string.Empty, port, _configProvider, _logger);
+        var disconnected = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        channel.DeviceDisconnected += (_, args) => disconnected.TrySetResult(args.Reason);
+
+        var device = new DeviceInfo
+        {
+            DeviceId = "tcp-server-remote-close-device",
+            CommunicationType = CommunicationType.Tcp,
+            ConnectionMode = ConnectionMode.Server,
+            LocalPort = port,
+            IpAddress = "127.0.0.1"
+        };
+
+        Assert.True(await channel.OpenAsync());
+
+        var connectTask = channel.ConnectDeviceAsync(device);
+        using var remoteClient = new TcpClient();
+        await remoteClient.ConnectAsync(IPAddress.Loopback, port);
+        Assert.True(await connectTask.WaitAsync(TimeSpan.FromSeconds(3)));
+
+        remoteClient.Close();
+
+        var reason = await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.Equal("Remote disconnected.", reason);
+        Assert.Equal(0, channel.ActiveConnections);
+    }
+
+    [Fact]
     public async Task TcpServerChannel_ConnectDeviceAsync_ShouldBindPendingClientFromBacklogByDefault()
     {
         var port = GetFreeTcpPort();

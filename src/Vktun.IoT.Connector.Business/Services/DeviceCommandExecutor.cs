@@ -147,10 +147,11 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
             return new CommandResult
             {
                 CommandId = command.CommandId,
-                Success = true,
+                Success = parsed != null,
                 RequestData = requestData,
                 ResponseData = response,
                 ParsedData = parsed,
+                ErrorMessage = parsed == null ? "Response could not be parsed." : null,
                 ElapsedTime = DateTime.Now - startedAt
             };
         }
@@ -302,14 +303,14 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
             });
             adjustedConfig.ParseRules["ModbusConfig"] = adjustedConfig.DefinitionJson;
 
-            var parsed = context.Parser.Parse(response, adjustedConfig).FirstOrDefault();
+            var parsed = TryParseResponse(context, response, requestPayload, command.CommandId, adjustedConfig);
             if (parsed != null)
             {
                 allPoints.AddRange(parsed.DataItems);
             }
             else
             {
-                RecordParseFailure(context, requestPayload, response, command.CommandId, adjustedConfig.ConfigVersion, "Modbus parser returned no data.");
+                throw new InvalidOperationException("Modbus response could not be parsed.");
             }
         }
 
@@ -416,6 +417,7 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         var responseSource = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.ResetResponseBuffer();
         context.PendingResponse = responseSource;
 
         try
@@ -484,20 +486,26 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         return context.Parser.Pack(command, context.ProtocolConfig);
     }
 
-    private DeviceData? TryParseResponse(DeviceRuntimeContext context, byte[] responseData, byte[] requestData, string taskId)
+    private DeviceData? TryParseResponse(
+        DeviceRuntimeContext context,
+        byte[] responseData,
+        byte[] requestData,
+        string taskId,
+        ProtocolConfig? protocolConfig = null)
     {
         try
         {
-            if (!context.Parser.Validate(responseData, context.ProtocolConfig))
+            var config = protocolConfig ?? context.ProtocolConfig;
+            if (!context.Parser.Validate(responseData, config))
             {
-                RecordParseFailure(context, requestData, responseData, taskId, context.ProtocolConfig.ConfigVersion, "Protocol validation failed.");
+                RecordParseFailure(context, requestData, responseData, taskId, config.ConfigVersion, "Protocol validation failed.");
                 return null;
             }
 
-            var parsed = context.Parser.Parse(responseData, context.ProtocolConfig).FirstOrDefault();
+            var parsed = context.Parser.Parse(responseData, config).FirstOrDefault();
             if (parsed == null)
             {
-                RecordParseFailure(context, requestData, responseData, taskId, context.ProtocolConfig.ConfigVersion, "Parser returned no data.");
+                RecordParseFailure(context, requestData, responseData, taskId, config.ConfigVersion, "Parser returned no data.");
                 return null;
             }
 
@@ -508,7 +516,7 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            RecordParseFailure(context, requestData, responseData, taskId, context.ProtocolConfig.ConfigVersion, ex.Message);
+            RecordParseFailure(context, requestData, responseData, taskId, (protocolConfig ?? context.ProtocolConfig).ConfigVersion, ex.Message);
             _logger.Error($"Response parse failed. {FormatLogContext(context, taskId)} error={ex.Message}", ex);
             return null;
         }
@@ -518,7 +526,18 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
     {
         if (_contexts.TryGetValue(e.DeviceId, out var context))
         {
-            context.PendingResponse?.TrySetResult(e.Data);
+            try
+            {
+                var responseFrame = context.AppendResponseData(e.Data);
+                if (responseFrame != null)
+                {
+                    context.PendingResponse?.TrySetResult(responseFrame);
+                }
+            }
+            catch (Exception ex)
+            {
+                context.PendingResponse?.TrySetException(ex);
+            }
         }
 
         DataReceived?.Invoke(this, e);
@@ -702,6 +721,124 @@ public class DeviceCommandExecutor : IDeviceCommandExecutor, IAsyncDisposable
         public ICommunicationChannel Channel { get; }
         public SemaphoreSlim ExecutionLock { get; } = new(1, 1);
         public TaskCompletionSource<byte[]>? PendingResponse { get; set; }
+        private readonly object _responseBufferLock = new();
+        private readonly List<byte> _responseBuffer = new();
+
+        public void ResetResponseBuffer()
+        {
+            lock (_responseBufferLock)
+            {
+                _responseBuffer.Clear();
+            }
+        }
+
+        public byte[]? AppendResponseData(byte[] data)
+        {
+            lock (_responseBufferLock)
+            {
+                _responseBuffer.AddRange(data);
+                if (_responseBuffer.Count > 1024 * 1024)
+                {
+                    _responseBuffer.Clear();
+                    throw new InvalidOperationException("Response frame exceeds the 1 MiB safety limit.");
+                }
+
+                var frameLength = GetExpectedFrameLength();
+                if (frameLength == null || _responseBuffer.Count < frameLength.Value)
+                {
+                    return null;
+                }
+
+                var frame = _responseBuffer.Take(frameLength.Value).ToArray();
+                _responseBuffer.RemoveRange(0, frameLength.Value);
+                return frame;
+            }
+        }
+
+        private int? GetExpectedFrameLength()
+        {
+            return ProtocolConfig.ProtocolType switch
+            {
+                ProtocolType.ModbusTcp => GetModbusTcpFrameLength(),
+                ProtocolType.ModbusRtu => GetModbusRtuFrameLength(),
+                ProtocolType.S7 => GetTpktFrameLength(),
+                ProtocolType.IEC104 => GetIec104FrameLength(),
+                _ => _responseBuffer.Count
+            };
+        }
+
+        private int? GetModbusTcpFrameLength()
+        {
+            if (_responseBuffer.Count < 6)
+            {
+                return null;
+            }
+
+            var length = (_responseBuffer[4] << 8) | _responseBuffer[5];
+            if (length is < 2 or > 254)
+            {
+                throw new InvalidOperationException($"Invalid Modbus TCP MBAP length: {length}.");
+            }
+
+            return 6 + length;
+        }
+
+        private int? GetModbusRtuFrameLength()
+        {
+            if (_responseBuffer.Count < 2)
+            {
+                return null;
+            }
+
+            var functionCode = _responseBuffer[1];
+            if ((functionCode & 0x80) != 0)
+            {
+                return 5;
+            }
+
+            return functionCode switch
+            {
+                0x01 or 0x02 or 0x03 or 0x04 when _responseBuffer.Count >= 3 => 5 + _responseBuffer[2],
+                0x05 or 0x06 or 0x0F or 0x10 => 8,
+                _ => null
+            };
+        }
+
+        private int? GetTpktFrameLength()
+        {
+            if (_responseBuffer.Count < 4)
+            {
+                return null;
+            }
+
+            if (_responseBuffer[0] != 0x03)
+            {
+                throw new InvalidOperationException("Invalid TPKT response header.");
+            }
+
+            var length = (_responseBuffer[2] << 8) | _responseBuffer[3];
+            if (length is < 4 or > 65535)
+            {
+                throw new InvalidOperationException($"Invalid TPKT response length: {length}.");
+            }
+
+            return length;
+        }
+
+        private int? GetIec104FrameLength()
+        {
+            if (_responseBuffer.Count < 2)
+            {
+                return null;
+            }
+
+            if (_responseBuffer[0] != 0x68)
+            {
+                throw new InvalidOperationException("Invalid IEC104 response start byte.");
+            }
+
+            return 2 + _responseBuffer[1];
+        }
 
         public int GetDefaultTimeout()
         {

@@ -280,6 +280,31 @@ public class TaskSchedulerTests
         await scheduler.StopAsync();
     }
 
+    [Fact]
+    public async Task GetTaskResultAsync_AfterTaskCompletes_ShouldReturnCompletedResult()
+    {
+        var scheduler = CreateScheduler(maxRetryCount: 0);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        scheduler.TaskCompleted += (_, _) => completion.TrySetResult();
+        _deviceManager.Setup(m => m.GetDeviceAsync("completed-device"))
+            .ReturnsAsync(new DeviceInfo { DeviceId = "completed-device" });
+        _commandExecutor.Setup(e => e.ExecuteAsync(It.IsAny<DeviceCommand>(), It.IsAny<DeviceInfo>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CommandResult { Success = true });
+
+        await scheduler.StartAsync();
+        var taskId = await scheduler.SubmitTaskAsync(new DeviceCommand
+        {
+            DeviceId = "completed-device",
+            CommandName = "Read"
+        });
+
+        await completion.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        var result = await scheduler.GetTaskResultAsync(taskId);
+
+        Assert.True(result.Success);
+        await scheduler.StopAsync();
+    }
+
     private Scheduler CreateScheduler(int maxRetryCount = 3, int retryBaseIntervalMs = 100)
     {
         return new Scheduler(

@@ -261,7 +261,7 @@ public class ModbusTcpServer : TcpServerBase, IDeviceSimulator
         
         _dataStore.SetCoil(address, value == 0xFF00);
         
-        var response = new byte[6];
+        var response = new byte[5];
         response[0] = 0x05;
         response[1] = (byte)(address >> 8);
         response[2] = (byte)(address & 0xFF);
@@ -278,7 +278,7 @@ public class ModbusTcpServer : TcpServerBase, IDeviceSimulator
         
         _dataStore.SetHoldingRegister(address, value);
         
-        var response = new byte[6];
+        var response = new byte[5];
         response[0] = 0x06;
         response[1] = (byte)(address >> 8);
         response[2] = (byte)(address & 0xFF);
@@ -302,7 +302,7 @@ public class ModbusTcpServer : TcpServerBase, IDeviceSimulator
         
         _dataStore.SetCoils(startAddress, values);
         
-        var response = new byte[6];
+        var response = new byte[5];
         response[0] = 0x0F;
         response[1] = (byte)(startAddress >> 8);
         response[2] = (byte)(startAddress & 0xFF);
@@ -326,7 +326,7 @@ public class ModbusTcpServer : TcpServerBase, IDeviceSimulator
         
         _dataStore.SetHoldingRegisters(startAddress, values);
         
-        var response = new byte[6];
+        var response = new byte[5];
         response[0] = 0x10;
         response[1] = (byte)(startAddress >> 8);
         response[2] = (byte)(startAddress & 0xFF);
