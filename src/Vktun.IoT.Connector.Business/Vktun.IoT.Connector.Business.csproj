@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>true</IsPackable>
     <PackageId>Vktun.IoT.Connector.Business</PackageId>
-    <Version>0.0.6</Version>
+    <Version>0.0.7</Version>
     <Authors>Vktun</Authors>
     <Description>Vktun IoT Connector Business - 运行时编排层，包含 DeviceManager、SessionManager、HeartbeatManager、DataProvider、DeviceCommandExecutor 和 RetryPolicy 等能力。
 

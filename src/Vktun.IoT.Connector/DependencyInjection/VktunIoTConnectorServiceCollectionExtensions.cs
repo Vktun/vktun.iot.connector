@@ -41,6 +41,7 @@ public static class VktunIoTConnectorServiceCollectionExtensions
 
         services.TryAddSingleton<IProtocolParserFactory, ProtocolParserFactory>();
         services.TryAddSingleton<ICommunicationChannelFactory, CommunicationChannelFactory>();
+        services.TryAddSingleton<IPersistentModbusTcpTransport, PersistentModbusTcpTransport>();
         services.TryAddSingleton<IDeviceCommandExecutor, DeviceCommandExecutor>();
         services.TryAddSingleton<IModbusClient, ModbusClient>();
         services.TryAddSingleton<IModbusSlaveServer, ModbusSlaveServer>();
@@ -86,6 +87,22 @@ public static class VktunIoTConnectorServiceCollectionExtensions
         services.TryAddSingleton<IIoTDataCollector, IoTDataCollector>();
         services.TryAddSingleton(serviceProvider => (IoTDataCollector)serviceProvider.GetRequiredService<IIoTDataCollector>());
 
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the persistent Modbus TCP request/response transport without registering
+    /// the full collector runtime. Hosts that already own their device workflows can
+    /// use this to share one serialized connection per physical endpoint.
+    /// </summary>
+    public static IServiceCollection AddVktunPersistentModbusTcpTransport(
+        this IServiceCollection services,
+        Action<VktunIoTConnectorOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddVktunCoreInfrastructure(CreateOptions(configure));
+        services.TryAddSingleton<IPersistentModbusTcpTransport, PersistentModbusTcpTransport>();
         return services;
     }
 

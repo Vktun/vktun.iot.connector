@@ -309,3 +309,7 @@ nupkgs/
 **/.dotnet-home/.dotnet/*
 
 iot.connector.ps1
+
+.workbuddy/
+.trae/
+.dotnet-home/
