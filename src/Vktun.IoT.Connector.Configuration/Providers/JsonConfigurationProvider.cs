@@ -583,7 +583,9 @@ public class JsonConfigurationProvider : IConfigurationProvider
                 SessionIdleTimeout = 3600000,
                 ListenBacklog = 100,
                 ReceiveBufferSize = 8192,
-                SendBufferSize = 8192
+                SendBufferSize = 8192,
+                SerializeSends = true,
+                ProbeGateWaitTimeoutMs = 5000
             },
             Udp = new UdpConfig
             {
@@ -599,7 +601,9 @@ public class JsonConfigurationProvider : IConfigurationProvider
                 PollingInterval = 100,
                 ReceivePollingInterval = 10,
                 ReadWriteTimeout = 500,
-                MaxConcurrentPorts = 4
+                MaxConcurrentPorts = 4,
+                EnableSendSerialization = true,
+                InterFrameDelayMs = 0
             },
             Wireless = new WirelessConfig
             {

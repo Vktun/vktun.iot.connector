@@ -19,12 +19,17 @@ public sealed class PersistentModbusTcpTransport : IPersistentModbusTcpTransport
     private const int MaxModbusFrameLength = 260;
     private readonly ConcurrentDictionary<string, EndpointConnection> _connections = new(StringComparer.OrdinalIgnoreCase);
     private readonly int _idleTimeoutMs;
+    private readonly bool _serializeSends;
+    private readonly int _probeGateWaitTimeoutMs;
     private int _disposed;
 
     public PersistentModbusTcpTransport(IConfigurationProvider configurationProvider)
     {
         ArgumentNullException.ThrowIfNull(configurationProvider);
-        _idleTimeoutMs = Math.Max(1_000, configurationProvider.GetConfig().Tcp.SessionIdleTimeout);
+        var config = configurationProvider.GetConfig();
+        _idleTimeoutMs = Math.Max(1_000, config.Tcp.SessionIdleTimeout);
+        _serializeSends = config.Tcp.SerializeSends;
+        _probeGateWaitTimeoutMs = Math.Max(1, config.Tcp.ProbeGateWaitTimeoutMs);
     }
 
     public async Task<PersistentModbusTcpResult> SendAsync(
@@ -50,7 +55,13 @@ public sealed class PersistentModbusTcpTransport : IPersistentModbusTcpTransport
         }
 
         var connection = _connections.GetOrAdd(BuildKey(request), _ => new EndpointConnection());
-        await connection.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var gateAcquired = false;
+        if (_serializeSends)
+        {
+            await connection.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            gateAcquired = true;
+        }
+
         var stopwatch = Stopwatch.StartNew();
         var sent = false;
         long connectMs = 0;
@@ -123,7 +134,10 @@ public sealed class PersistentModbusTcpTransport : IPersistentModbusTcpTransport
         }
         finally
         {
-            connection.Gate.Release();
+            if (gateAcquired)
+            {
+                connection.Gate.Release();
+            }
         }
     }
 
@@ -139,39 +153,62 @@ public sealed class PersistentModbusTcpTransport : IPersistentModbusTcpTransport
         }
 
         var connection = _connections.GetOrAdd(BuildKey(request), _ => new EndpointConnection());
-        await connection.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        var stopwatch = Stopwatch.StartNew();
+        var gateAcquired = false;
         try
         {
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(Math.Max(1, request.TimeoutMs));
-            await EnsureConnectedAsync(connection, request, timeoutCts.Token).ConfigureAwait(false);
-            connection.LastActivityUtc = DateTime.UtcNow;
-            stopwatch.Stop();
-            return new PersistentModbusTcpResult
+            var acquired = await connection.Gate.WaitAsync(TimeSpan.FromMilliseconds(_probeGateWaitTimeoutMs), cancellationToken).ConfigureAwait(false);
+            if (!acquired)
             {
-                Outcome = PersistentModbusTcpOutcome.Succeeded,
-                TotalElapsedMs = stopwatch.ElapsedMilliseconds,
-            };
+                return Failed(cancellationToken.IsCancellationRequested
+                        ? PersistentModbusTcpOutcome.Cancelled
+                        : PersistentModbusTcpOutcome.ResponseTimeout,
+                    $"Probe queue wait timed out after {_probeGateWaitTimeoutMs}ms.");
+            }
+
+            gateAcquired = true;
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(Math.Max(1, request.TimeoutMs));
+                await EnsureConnectedAsync(connection, request, timeoutCts.Token).ConfigureAwait(false);
+                connection.LastActivityUtc = DateTime.UtcNow;
+                stopwatch.Stop();
+                return new PersistentModbusTcpResult
+                {
+                    Outcome = PersistentModbusTcpOutcome.Succeeded,
+                    TotalElapsedMs = stopwatch.ElapsedMilliseconds,
+                };
+            }
+            catch (OperationCanceledException)
+            {
+                await DestroyConnectionAsync(connection).ConfigureAwait(false);
+                stopwatch.Stop();
+                return Result(cancellationToken.IsCancellationRequested
+                        ? PersistentModbusTcpOutcome.Cancelled
+                        : PersistentModbusTcpOutcome.ResponseTimeout,
+                    "Connection probe timed out or was cancelled.", false, 0, 0, 0, stopwatch);
+            }
+            catch (Exception ex)
+            {
+                await DestroyConnectionAsync(connection).ConfigureAwait(false);
+                stopwatch.Stop();
+                return Result(PersistentModbusTcpOutcome.ConnectFailed, ex.Message, false, 0, 0, 0, stopwatch);
+            }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!gateAcquired)
         {
-            await DestroyConnectionAsync(connection).ConfigureAwait(false);
-            stopwatch.Stop();
-            return Result(cancellationToken.IsCancellationRequested
+            return Failed(cancellationToken.IsCancellationRequested
                     ? PersistentModbusTcpOutcome.Cancelled
                     : PersistentModbusTcpOutcome.ResponseTimeout,
-                "Connection probe timed out or was cancelled.", false, 0, 0, 0, stopwatch);
-        }
-        catch (Exception ex)
-        {
-            await DestroyConnectionAsync(connection).ConfigureAwait(false);
-            stopwatch.Stop();
-            return Result(PersistentModbusTcpOutcome.ConnectFailed, ex.Message, false, 0, 0, 0, stopwatch);
+                $"Probe queue wait timed out after {_probeGateWaitTimeoutMs}ms.");
         }
         finally
         {
-            connection.Gate.Release();
+            if (gateAcquired)
+            {
+                connection.Gate.Release();
+            }
         }
     }
 

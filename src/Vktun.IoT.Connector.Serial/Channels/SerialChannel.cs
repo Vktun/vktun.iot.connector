@@ -18,6 +18,7 @@ public class SerialChannel : SerialChannelBase
     private readonly ConcurrentQueue<byte[]> _receiveQueue = new();
     private readonly ISerialPortDriver _serialPortDriver;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private readonly bool _enableSendSerialization;
     private readonly int _interFrameDelayMs;
     private readonly int _readWriteTimeoutMs;
     private readonly int _pollingIntervalMs;
@@ -53,7 +54,10 @@ public class SerialChannel : SerialChannelBase
             MapStopBits(stopBits));
 
         var config = configProvider.GetConfig();
-        _interFrameDelayMs = CalculateInterFrameDelay(baudRate);
+        _enableSendSerialization = config.Serial.EnableSendSerialization;
+        _interFrameDelayMs = config.Serial.InterFrameDelayMs > 0
+            ? config.Serial.InterFrameDelayMs
+            : CalculateInterFrameDelay(baudRate);
         _readWriteTimeoutMs = config.Serial.ReadWriteTimeout;
         _pollingIntervalMs = config.Serial.PollingInterval;
         _maxDevicesPerPort = config.Serial.MaxDevicesPerPort;
@@ -130,7 +134,11 @@ public class SerialChannel : SerialChannelBase
             return 0;
         }
 
-        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (_enableSendSerialization)
+        {
+            await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         try
         {
             await EnsureInterFrameDelayAsync(cancellationToken).ConfigureAwait(false);
@@ -163,7 +171,10 @@ public class SerialChannel : SerialChannelBase
         }
         finally
         {
-            _sendLock.Release();
+            if (_enableSendSerialization)
+            {
+                _sendLock.Release();
+            }
         }
     }
 

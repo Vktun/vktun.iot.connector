@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added `TcpConfig.SerializeSends` (default `true`): when disabled, `PersistentModbusTcpTransport.SendAsync` no longer waits on the per-endpoint serialization gate, allowing concurrent sends at the caller's risk.
+- Added `TcpConfig.ProbeGateWaitTimeoutMs` (default `5000`): bounds how long a health probe (`ProbeAsync`) waits for the endpoint serialization gate; on timeout the probe fails fast with `ResponseTimeout` without destroying the shared connection.
+- Added `SerialConfig.EnableSendSerialization` (default `true`): when disabled, `SerialChannel.SendAsync` skips the per-port send lock, allowing concurrent writes.
+- Added `SerialConfig.InterFrameDelayMs` (default `0`): explicit inter-frame delay override; `0` keeps the automatic baud-rate-based delay.
+
 ## 0.0.5 - 2026-05-08
 
 ### Fixed

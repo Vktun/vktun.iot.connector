@@ -38,6 +38,8 @@ namespace Vktun.IoT.Connector.Core.Models
         public int ListenBacklog { get; set; } = 100;
         public int ReceiveBufferSize { get; set; } = 8192;
         public int SendBufferSize { get; set; } = 8192;
+        public bool SerializeSends { get; set; } = true;
+        public int ProbeGateWaitTimeoutMs { get; set; } = 5000;
     }
 
     public class UdpConfig
@@ -66,6 +68,8 @@ namespace Vktun.IoT.Connector.Core.Models
         public int ReceivePollingInterval { get; set; } = 10;
         public int ReadWriteTimeout { get; set; } = 500;
         public int MaxConcurrentPorts { get; set; } = 4;
+        public bool EnableSendSerialization { get; set; } = true;
+        public int InterFrameDelayMs { get; set; }
     }
 
     public class WirelessConfig

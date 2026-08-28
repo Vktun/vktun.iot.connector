@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Vktun.IoT.Connector.Communication.Channels;
@@ -105,6 +106,77 @@ public class PersistentModbusTcpTransportTests
         await server.WaitAsync(TimeSpan.FromSeconds(3));
     }
 
+    [Fact]
+    public async Task Probe_And_Send_ShouldShareOnePhysicalConnection()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var acceptedConnections = 0;
+        var server = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync();
+            Interlocked.Increment(ref acceptedConnections);
+            await using var stream = client.GetStream();
+            var request = await ReadMbapAsync(stream);
+            var response = new byte[] { request[0], request[1], 0, 0, 0, 5, request[6], request[7], 2, 0, 42 };
+            await stream.WriteAsync(response);
+        });
+
+        await using var transport = new PersistentModbusTcpTransport(new TestConfigurationProvider());
+        var probe = await transport.ProbeAsync(MbapRequest(port, 1));
+        var send = await transport.SendAsync(MbapRequest(port, 2));
+
+        Assert.True(probe.Succeeded);
+        Assert.True(send.Succeeded);
+        Assert.Equal(1, Volatile.Read(ref acceptedConnections));
+        await server.WaitAsync(TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public async Task Probe_WhenBusinessSendHoldsTheEndpointGate_ShouldQueueWaitTimeout()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var requestReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseResponse = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var server = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync();
+            await using var stream = client.GetStream();
+            var request = await ReadMbapAsync(stream);
+            requestReceived.SetResult();
+            await releaseResponse.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            var response = new byte[] { request[0], request[1], 0, 0, 0, 5, request[6], request[7], 2, 0, 42 };
+            await stream.WriteAsync(response);
+        });
+
+        await using var transport = new PersistentModbusTcpTransport(new TestConfigurationProvider(new SdkConfig
+        {
+            Tcp = new TcpConfig { ProbeGateWaitTimeoutMs = 50 }
+        }));
+
+        var sendTask = transport.SendAsync(MbapRequest(port, 1, 2000));
+        await requestReceived.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        var stopwatch = Stopwatch.StartNew();
+        var probe = await transport.ProbeAsync(MbapRequest(port, 2, 2000));
+        stopwatch.Stop();
+
+        Assert.Equal(PersistentModbusTcpOutcome.ResponseTimeout, probe.Outcome);
+        Assert.True(stopwatch.ElapsedMilliseconds < 500, $"probe should fail fast, took {stopwatch.ElapsedMilliseconds}ms");
+
+        releaseResponse.SetResult();
+        var send = await sendTask.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.True(send.Succeeded);
+
+        // The queued probe did not destroy the shared connection; the next probe succeeds on it.
+        var laterProbe = await transport.ProbeAsync(MbapRequest(port, 3, 2000));
+        Assert.True(laterProbe.Succeeded);
+        await server.WaitAsync(TimeSpan.FromSeconds(3));
+    }
+
     private static PersistentModbusTcpRequest MbapRequest(int port, ushort transactionId, int timeoutMs = 1000) => new()
     {
         Host = "127.0.0.1",
@@ -155,7 +227,17 @@ public class PersistentModbusTcpTransportTests
 
     private sealed class TestConfigurationProvider : IConfigurationProvider
     {
-        private readonly SdkConfig _config = new() { Tcp = new TcpConfig { SessionIdleTimeout = 3_600_000 } };
+        private readonly SdkConfig _config;
+
+        public TestConfigurationProvider()
+            : this(new SdkConfig { Tcp = new TcpConfig { SessionIdleTimeout = 3_600_000 } })
+        {
+        }
+
+        public TestConfigurationProvider(SdkConfig config)
+        {
+            _config = config;
+        }
 
         public SdkConfig GetConfig() => _config;
         public Task<SdkConfig> LoadConfigAsync(string filePath) => Task.FromResult(_config);
